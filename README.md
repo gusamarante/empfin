@@ -1,2 +1,5 @@
 # empfin
-Empirical Finance package under development
+
+Resources for empirical finance
+
+Under construction...
