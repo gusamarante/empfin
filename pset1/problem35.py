@@ -8,11 +8,15 @@ Problem 3.5 - Campbell's Book
 import pandas as pd
 from empfin import performance
 import statsmodels.api as sm
+import matplotlib.pyplot as plt
+from matplotlib import colormaps
+from plottable import ColDef, Table
 
-
+size = 6
 split_date = "1963-12-31"
 
-# Read and Organize the data
+
+# ===== Read and Organize the data =====
 data = pd.read_csv("data35.csv")
 data = data.rename({"Unnamed: 0": "Date", "Market ": "Market"}, axis=1)
 data["Date"] = pd.to_datetime(data["Date"], format="%Y%m")
@@ -27,7 +31,7 @@ samples = {
 }
 
 
-# Performance Measures
+# ===== Performance Measures =====
 stats_table = pd.concat(
     {
         k: performance(v)
@@ -36,7 +40,7 @@ stats_table = pd.concat(
     names=["Sample"],
 )
 
-# Alpha and Betas to Market Portfolio
+# ===== Alpha and Betas to Market Portfolio =====
 for sample_name, aux_data in samples.items():
     for port in aux_data.columns:
         model = sm.OLS(
@@ -53,9 +57,29 @@ for sample_name, aux_data in samples.items():
 print(stats_table)
 
 
-# Correlations
+# ===== Correlations =====
 covars = {k: v.cov() for k, v in samples.items()}
 correls = {k: v.corr() for k, v in samples.items()}
 
+column_definitions = [
+    ColDef(port, cmap=colormaps['coolwarm'], formatter="{:.2f}") for port in subexcess1.columns
+] + [ColDef("index", title="")]
+cellkw = {"edgecolor": "w", "linewidth": 0}
 
-print(correls)
+
+fig = plt.figure(figsize=(size * (16 / 9), size))
+
+ax = plt.subplot2grid((2, 4), (0, 1), colspan=2)
+ax.set_title("Full Sample")
+tab = Table(correls['Full sample'], column_definitions=column_definitions, cell_kw=cellkw)
+
+ax = plt.subplot2grid((2, 2), (1, 0))
+ax.set_title("Sub-Sample 1")
+tab = Table(correls['Sub-sample 1'], column_definitions=column_definitions, cell_kw=cellkw)
+
+ax = plt.subplot2grid((2, 2), (1, 1))
+ax.set_title("Sub-Sample 2")
+tab = Table(correls['Sub-sample 2'], column_definitions=column_definitions, cell_kw=cellkw)
+
+plt.tight_layout()
+plt.show()
