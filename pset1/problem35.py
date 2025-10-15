@@ -60,7 +60,7 @@ def plot_efficient_frontier(axis, mu, sigma):
     axis.plot(sigma_range, mu_range, label="EF Risky")
     axis.axline((0, 0), (vol_tan, mu_tan), label="EF Risky + Rf")
 
-    return axis
+    return axis, w_tan
 
 
 # ===== Read and Organize the data =====
@@ -140,7 +140,7 @@ fig = plt.figure(figsize=(size * (16 / 9), size))
 
 ax = plt.subplot2grid((2, 4), (0, 1), colspan=2)
 ax.set_title("Full Sample")
-ax = plot_efficient_frontier(
+ax, w_tan_full = plot_efficient_frontier(
     axis=ax,
     mu=stats_table.loc["Full sample", "Mean"],
     sigma=covars["Full sample"],
@@ -149,7 +149,7 @@ ax.legend(frameon=True, loc='best')
 
 ax = plt.subplot2grid((2, 2), (1, 0))
 ax.set_title("Sub-Sample 1")
-ax = plot_efficient_frontier(
+ax, w_tan_ss1 = plot_efficient_frontier(
     axis=ax,
     mu=stats_table.loc["Sub-sample 1", "Mean"],
     sigma=covars["Sub-sample 1"],
@@ -158,7 +158,7 @@ ax.legend(frameon=True, loc='best')
 
 ax = plt.subplot2grid((2, 2), (1, 1))
 ax.set_title("Sub-Sample 2")
-ax = plot_efficient_frontier(
+ax, w_tan_ss2 = plot_efficient_frontier(
     axis=ax,
     mu=stats_table.loc["Sub-sample 2", "Mean"],
     sigma=covars["Sub-sample 2"],
@@ -168,3 +168,21 @@ ax.legend(frameon=True, loc='best')
 plt.tight_layout()
 plt.savefig(save_path.joinpath("Q1 Efficient Frontiers.pdf"))
 plt.show()
+
+
+# Tangency portfolios
+rets_tan_full = (excess @ w_tan_full).to_frame("Tangency")
+rets_tan_ss1 = (excess @ w_tan_ss1).to_frame("Tangency")
+rets_tan_ss2 = (excess @ w_tan_ss2).to_frame("Tangency")
+
+sharpes = pd.DataFrame()
+sharpes.loc["Full sample", "Market"] = stats_table.loc[("Full sample", "Market"), "Sharpe"]
+sharpes.loc["Full sample", "Tangency"] = performance(rets_tan_full).loc["Tangency", "Sharpe"]
+sharpes.loc["Sub-sample 1", "Market"] = stats_table.loc[("Sub-sample 1", "Market"), "Sharpe"]
+sharpes.loc["Sub-sample 1", "Tangency"] = performance(rets_tan_ss1).loc["Tangency", "Sharpe"]
+sharpes.loc["Sub-sample 2", "Market"] = stats_table.loc[("Sub-sample 2", "Market"), "Sharpe"]
+sharpes.loc["Sub-sample 2", "Tangency"] = performance(rets_tan_ss2).loc["Tangency", "Sharpe"]
+print(sharpes)
+
+
+# TODO Plot expected return against beta for each of the portfolios. Calculate alphas and discuss your results.
