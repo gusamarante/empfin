@@ -1,15 +1,14 @@
 """
 Problem 3.5 - Campbell's Book
 """
-# TODO Checklist
-#  compute two ex-post mean-variance efficient sets: one for portfolios not including the riskless asset, and one including the riskless asset. Plot the two sets on a graph with the standard deviation of excess returns on the horizontal axis and the mean excess return on the vertical axis, and indicate where each of the four Fama-French portfolios and the market portfolio lie.
-#  Calculate the Sharpe ratios of the tangency portfolio and the market portfolio
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from plottable import ColDef, Table
-import numpy as np
+
+from pset1.utils import save_path
 
 
 split_date = "1963-12-31"
@@ -131,10 +130,11 @@ ax.set_title("Sub-Sample 2")
 tab = Table(correls['Sub-sample 2'], column_definitions=column_definitions, cell_kw=cellkw)
 
 plt.tight_layout()
+plt.savefig(save_path.joinpath("Q1 Correlations.pdf"))
 plt.show()
 
 
-# ===== Efficient Frontioers =====
+# ===== Efficient Frontiers =====
 size = 8
 fig = plt.figure(figsize=(size * (16 / 9), size))
 
@@ -166,4 +166,5 @@ ax = plot_efficient_frontier(
 ax.legend(frameon=True, loc='best')
 
 plt.tight_layout()
+plt.savefig(save_path.joinpath("Q1 Efficient Frontiers.pdf"))
 plt.show()
