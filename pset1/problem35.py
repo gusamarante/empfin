@@ -7,10 +7,12 @@ import pandas as pd
 import statsmodels.api as sm
 from matplotlib import colormaps
 from plottable import ColDef, Table
+from scipy.stats import f
 
 from pset1.utils import save_path
 
 
+show_charts = False
 split_date = "1963-12-31"
 
 
@@ -131,7 +133,9 @@ tab = Table(correls['Sub-sample 2'], column_definitions=column_definitions, cell
 
 plt.tight_layout()
 plt.savefig(save_path.joinpath("Q1 Correlations.pdf"))
-plt.show()
+if show_charts:
+    plt.show()
+plt.close()
 
 
 # ===== Efficient Frontiers =====
@@ -167,22 +171,71 @@ ax.legend(frameon=True, loc='best')
 
 plt.tight_layout()
 plt.savefig(save_path.joinpath("Q1 Efficient Frontiers.pdf"))
-plt.show()
+if show_charts:
+    plt.show()
+plt.close()
 
 
 # Tangency portfolios
 rets_tan_full = (excess @ w_tan_full).to_frame("Tangency")
-rets_tan_ss1 = (excess @ w_tan_ss1).to_frame("Tangency")
-rets_tan_ss2 = (excess @ w_tan_ss2).to_frame("Tangency")
+rets_tan_ss1 = (subexcess1 @ w_tan_ss1).to_frame("Tangency")
+rets_tan_ss2 = (subexcess2 @ w_tan_ss2).to_frame("Tangency")
 
 sharpes = pd.DataFrame()
 sharpes.loc["Full sample", "Market"] = stats_table.loc[("Full sample", "Market"), "Sharpe"]
 sharpes.loc["Full sample", "Tangency"] = performance(rets_tan_full).loc["Tangency", "Sharpe"]
+sharpes.loc["Full sample", "T"] = rets_tan_full.shape[0]
 sharpes.loc["Sub-sample 1", "Market"] = stats_table.loc[("Sub-sample 1", "Market"), "Sharpe"]
 sharpes.loc["Sub-sample 1", "Tangency"] = performance(rets_tan_ss1).loc["Tangency", "Sharpe"]
+sharpes.loc["Sub-sample 1", "T"] = rets_tan_ss1.shape[0]
 sharpes.loc["Sub-sample 2", "Market"] = stats_table.loc[("Sub-sample 2", "Market"), "Sharpe"]
 sharpes.loc["Sub-sample 2", "Tangency"] = performance(rets_tan_ss2).loc["Tangency", "Sharpe"]
+sharpes.loc["Sub-sample 2", "T"] = rets_tan_ss2.shape[0]
+
+sharpes["GRS"] = ((sharpes["Tangency"]**2 - sharpes["Market"]**2) / (1 + sharpes["Market"]**2)) * ((sharpes["T"] - 5 - 1) / 5)
+sharpes["pvalue"] = 1 - f.cdf(sharpes["GRS"], dfn=5, dfd=sharpes["T"] - 5 - 1)
+
 print(sharpes)
 
 
-# TODO Plot expected return against beta for each of the portfolios. Calculate alphas and discuss your results.
+# ===== Chart - Beta =====
+size = 8
+fig = plt.figure(figsize=(size * (16 / 9), size))
+
+aux_plot = stats_table.loc["Full sample", ["Mean", "Beta"]].copy()
+ax = plt.subplot2grid((2, 4), (0, 1), colspan=2)
+ax.set_title("Full Sample")
+for port in aux_plot.index:
+    ax.plot(aux_plot.loc[port, "Beta"], aux_plot.loc[port, "Mean"], marker='o', lw=0, label=port)
+ax.axline((0, 0), (aux_plot.loc["Market", "Beta"], aux_plot.loc["Market", "Mean"]), label=None)
+ax.set_xlabel(r"$\beta$")
+ax.set_ylabel("Average Return")
+ax.legend(frameon=True, loc='best')
+
+
+aux_plot = stats_table.loc["Sub-sample 1", ["Mean", "Beta"]].copy()
+ax = plt.subplot2grid((2, 2), (1, 0))
+ax.set_title("Sub-Sample 1")
+for port in aux_plot.index:
+    ax.plot(aux_plot.loc[port, "Beta"], aux_plot.loc[port, "Mean"], marker='o', lw=0, label=port)
+ax.axline((0, 0), (aux_plot.loc["Market", "Beta"], aux_plot.loc["Market", "Mean"]), label=None)
+ax.set_xlabel(r"$\beta$")
+ax.set_ylabel("Average Return")
+ax.legend(frameon=True, loc='best')
+
+
+aux_plot = stats_table.loc["Sub-sample 2", ["Mean", "Beta"]].copy()
+ax = plt.subplot2grid((2, 2), (1, 1))
+ax.set_title("Sub-Sample 2")
+for port in aux_plot.index:
+    ax.plot(aux_plot.loc[port, "Beta"], aux_plot.loc[port, "Mean"], marker='o', lw=0, label=port)
+ax.axline((0, 0), (aux_plot.loc["Market", "Beta"], aux_plot.loc["Market", "Mean"]), label=None)
+ax.set_xlabel(r"$\beta$")
+ax.set_ylabel("Average Return")
+ax.legend(frameon=True, loc='best')
+
+plt.tight_layout()
+plt.savefig(save_path.joinpath("Q1 Beta Return SML.pdf"))
+if show_charts:
+    plt.show()
+plt.close()
