@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from statsmodels.graphics.tsaplots import plot_acf
 from matplotlib import colormaps
 from plottable import ColDef, Table
 from scipy.stats import f
@@ -308,5 +309,31 @@ if show_charts:
 plt.close()
 
 
-# TODO Item (b) (iii) Auto correlation
+# ===========================
+# ===== Autocorrelation =====
+# ===========================
+acfexcess1 = smallHML_ss1.resample("QE").sum()
+acfexcess2 = smallHML_ss2.resample("QE").sum()
 
+size = 6
+fig = plt.figure(figsize=(size * (16 / 9), size))
+
+ax = plt.subplot2grid((1, 2), (0, 0))
+ax = plot_acf(acfexcess1, lags=12, ax=ax)
+ax = ax.gca()
+ax.set_title("ACF Sub-sample 1")
+
+ax = plt.subplot2grid((1, 2), (0, 1))
+ax = plot_acf(acfexcess2, lags=12, ax=ax)
+ax = ax.gca()
+ax.set_title("ACF Sub-sample 2")
+
+
+
+plt.tight_layout()
+plt.savefig(save_path.joinpath("Q1 SmallHML ACF.pdf"))
+if True:
+    plt.show()
+plt.close()
+
+a = 1
