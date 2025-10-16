@@ -1,6 +1,3 @@
-"""
-Problem 3.5 - Campbell's Book
-"""
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
