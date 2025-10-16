@@ -239,3 +239,74 @@ plt.savefig(save_path.joinpath("Q1 Beta Return SML.pdf"))
 if show_charts:
     plt.show()
 plt.close()
+
+
+# ==================
+# ===== ITEM B =====
+# ==================
+smallHML = excess["Small-High"] - excess["Small-Low"]
+smallHML1yMA = smallHML.rolling(12).mean().dropna()
+smallHML_ss1 = smallHML[smallHML.index <= split_date]
+smallHML_ss2 = smallHML[smallHML.index > split_date]
+
+perf_smallHML = pd.DataFrame(
+    {
+        "Full Sample": performance(smallHML.to_frame("Full Sample")).loc["Full Sample"],
+        "Sub-sample 1": performance(smallHML_ss1.to_frame("Sub-sample 1")).loc["Sub-sample 1"],
+        "Sub-sample 2": performance(smallHML_ss2.to_frame("Sub-sample 2")).loc["Sub-sample 2"],
+    }
+)
+
+
+# ===== Chart - Beta =====
+size = 6
+fig = plt.figure(figsize=(size * (16 / 9), size))
+
+ax = plt.subplot2grid((1, 1), (0, 0))
+ax.plot(smallHML, color="tab:blue", alpha=0.3, label="Small HML")
+ax.plot(smallHML1yMA, color="tab:blue", label="Small HML 1y MA")
+
+
+ax.plot(
+    [smallHML_ss1.index[0], smallHML_ss1.index[-1]],
+    [perf_smallHML.loc["Mean", "Sub-sample 1"], perf_smallHML.loc["Mean", "Sub-sample 1"]],
+    label="Sub-sample 1 mean",
+    color="tab:orange",
+)
+ax.fill_between(
+    smallHML_ss1.index,
+    perf_smallHML.loc["Mean", "Sub-sample 1"] + 2 * perf_smallHML.loc["Volatility", "Sub-sample 1"],
+    perf_smallHML.loc["Mean", "Sub-sample 1"] - 2 * perf_smallHML.loc["Volatility", "Sub-sample 1"],
+    label="Sub-sample 1 $\pm2\sigma$",
+    color="tab:orange",
+    alpha=0.15,
+)
+
+
+ax.plot(
+    [smallHML_ss2.index[0], smallHML_ss2.index[-1]],
+    [perf_smallHML.loc["Mean", "Sub-sample 2"], perf_smallHML.loc["Mean", "Sub-sample 2"]],
+    label="Sub-sample 2 mean",
+    color="tab:red",
+)
+ax.fill_between(
+    smallHML_ss2.index,
+    perf_smallHML.loc["Mean", "Sub-sample 2"] + 2 * perf_smallHML.loc["Volatility", "Sub-sample 2"],
+    perf_smallHML.loc["Mean", "Sub-sample 2"] - 2 * perf_smallHML.loc["Volatility", "Sub-sample 2"],
+    label="Sub-sample 2 $\pm2\sigma$",
+    color="tab:red",
+    alpha=0.15,
+)
+
+ax.axvline(pd.to_datetime(split_date), color="black", ls="--", label="Sample Split")
+ax.legend(frameon=True, loc='best')
+
+plt.tight_layout()
+plt.savefig(save_path.joinpath("Q1 SmallHML timeseries.pdf"))
+if show_charts:
+    plt.show()
+plt.close()
+
+
+# TODO Item (b) (iii) Auto correlation
+
