@@ -59,3 +59,29 @@ for xname in ["dp", "xp"]:
 
 print("ITEM B")
 print(reg_full)
+
+
+# ===== Item (c) =====
+dates2loop = data.index[data.index > split_date][:-1]
+hist_avg = (data["Rm"] - data["Rf"]).rolling(n_sample, min_periods=n_sample - 1).mean().shift(1)
+numer = {"dp": 0, "xp": 0}
+denom = {"dp": 0, "xp": 0}
+for t in tqdm(dates2loop):
+    aux_data = data.loc[:t].iloc[-n_sample:]
+    Y = aux_data["Rm"] - aux_data["Rf"]
+
+    for xname in ["dp", "xp"]:
+        res = sm.OLS(Y, sm.add_constant(aux_data[xname].shift(1)), missing='drop').fit()
+        r_hat = max(0, max(0, res.params.loc[xname]) * aux_data.loc[t, xname] + res.params.loc["const"])
+
+        numer[xname] = numer[xname] + (Y.loc[t] - r_hat) ** 2
+        denom[xname] = denom[xname] + (Y.loc[t] - hist_avg.loc[t]) ** 2
+
+for xname in ["dp", "xp"]:
+    reg_full.loc["R2 OOS +", xname] = 1 - numer[xname] / denom[xname]
+
+print("ITEM C")
+print(reg_full)
+
+
+# TODO parei no item (d), construir a variável nova e refazer os item anteriores
