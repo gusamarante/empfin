@@ -4,8 +4,6 @@ from numpy.linalg import inv
 from scipy.stats import f
 
 
-EPSILON = 1e-8
-
 class TimeseriesReg:
 
     def __init__(self, assets, factors):
