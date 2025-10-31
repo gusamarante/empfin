@@ -6,9 +6,11 @@ facts, _ = ff5f()
 model = TwoPassReg(
     assets=ports,
     factors=facts,
-    cs_const=False,
+    cs_const=True,
 )
 
 print(model.lambdas)
-
 print(model.alphas)
+print(model.shanken_factor)
+print(model.conv_cov_alpha_hat)
+print(model.shanken_cov_alpha_hat)

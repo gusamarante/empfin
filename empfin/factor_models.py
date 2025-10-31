@@ -1,7 +1,10 @@
+import numpy as np
 import pandas as pd
 from numpy.linalg import inv
 from scipy.stats import f
 
+
+EPSILON = 1e-8
 
 class TimeseriesReg:
 
@@ -80,24 +83,51 @@ class TwoPassReg:
     def __init__(self, assets, factors, cs_const=False):
         # TODO DOcumentation
 
+        # First stage is the timeseries regression
         ts_reg = TimeseriesReg(assets.copy(), factors.copy())
-        self.betas = ts_reg.params.drop('alpha').T
+        self.T = ts_reg.T
+        self.N = ts_reg.N
+        self.K = ts_reg.K
+        self.betas = ts_reg.params.drop('alpha')
         self.avg_ret = assets.mean()
+        self.Sigma = ts_reg.Sigma
+        self.Omega = ts_reg.Omega
 
         if cs_const:
-            self.betas.insert(0, "const", 1)
+            self.betas = pd.concat([pd.DataFrame(data=1, columns=self.betas.columns, index=["const"]), self.betas], axis=0)
+            # Add a row and columns of zeros for the varianca of the intercept
+            self.Omega = np.vstack((np.zeros((1, self.Omega.shape[1])), self.Omega))
+            self.Omega = np.hstack((np.zeros((self.Omega.shape[0], 1)), self.Omega))
 
-        X = self.betas.values
+        X = self.betas.values.T
         Lhat = inv(X.T @ X) @ X.T @ self.avg_ret
         self.lambdas = pd.Series(
             data=Lhat,
-            index=["const"] + list(factors.columns) if cs_const else factors.columns,
+            index=self.betas.index,
         )
         self.alphas = pd.Series(
             data=self.avg_ret - X @ Lhat,
             index=assets.columns,
         )
-        # TODO cov alpha e lambda. Eq 12.16 do Cochrane
+
+        # Conventional OLS Estimator Covariance Matrix
+        # Equations 12.12 and 12.13 of Cochrane (2009)
+        self.conv_cov_lambda_hat = (1 / self.T) * (inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega)
+        self.conv_cov_alpha_hat = (1 / self.T) * (np.eye(self.N) - X @ inv(X.T @ X) @ X.T) @ self.Sigma @ (np.eye(self.N) - X @ inv(X.T @ X) @ X.T).T
+
+        # Shaken Correction for Covariance Matrices
+        # Equations 12.19 and 12.20 of Cochrane (2009)
+        if cs_const:
+            aux_covf = self.Omega.copy()[1:, 1:]
+            lhat = self.lambdas.copy().iloc[1:].values
+        else:
+            aux_covf = self.Omega.copy()
+            lhat = self.lambdas.copy().values
+
+        self.shanken_factor = 1 + lhat.T @ inv(aux_covf) @ lhat
+
+        self.shanken_cov_lambda_hat = (1 / self.T) * (self.shanken_factor * inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega)
+        self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
 
 class FamaMacbeth:
     pass
