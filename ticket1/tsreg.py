@@ -1,11 +1,14 @@
-from empfin import TimeseriesReg, ff25p, ff5f
+from empfin import TwoPassReg, ff25p, ff5f
 
 ports = ff25p()
 facts, _ = ff5f()
 
-model = TimeseriesReg(
+model = TwoPassReg(
     assets=ports,
     factors=facts,
+    cs_const=False,
 )
 
-print(model.params)
+print(model.lambdas)
+
+print(model.alphas)
