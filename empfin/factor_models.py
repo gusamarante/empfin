@@ -76,7 +76,7 @@ class TimeseriesReg:
         return grs, pvalue
 
 
-class TwoPassReg:
+class TwoPassOLS:
 
     def __init__(self, assets, factors, cs_const=False):
         # TODO DOcumentation
@@ -110,8 +110,16 @@ class TwoPassReg:
 
         # Conventional OLS Estimator Covariance Matrix
         # Equations 12.12 and 12.13 of Cochrane (2009)
-        self.conv_cov_lambda_hat = (1 / self.T) * (inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega)
-        self.conv_cov_alpha_hat = (1 / self.T) * (np.eye(self.N) - X @ inv(X.T @ X) @ X.T) @ self.Sigma @ (np.eye(self.N) - X @ inv(X.T @ X) @ X.T).T
+        self.conv_cov_lambda_hat = pd.DataFrame(
+            data=(1 / self.T) * (inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega),
+            index=self.lambdas.index,
+            columns=self.lambdas.index,
+        )
+        self.conv_cov_alpha_hat = pd.DataFrame(
+            data=(1 / self.T) * (np.eye(self.N) - X @ inv(X.T @ X) @ X.T) @ self.Sigma @ (np.eye(self.N) - X @ inv(X.T @ X) @ X.T).T,
+            index=assets.columns,
+            columns=assets.columns,
+        )
 
         # Shaken Correction for Covariance Matrices
         # Equations 12.19 and 12.20 of Cochrane (2009)
@@ -124,11 +132,24 @@ class TwoPassReg:
 
         self.shanken_factor = 1 + lhat.T @ inv(aux_covf) @ lhat
 
-        self.shanken_cov_lambda_hat = (1 / self.T) * (self.shanken_factor * inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega)
+        self.shanken_cov_lambda_hat = pd.DataFrame(
+            data=(1 / self.T) * (self.shanken_factor * inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega),
+            index=self.lambdas.index,
+            columns=self.lambdas.index,
+        )
         self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
 
-class FamaMacbeth:
+
+class TwoPassGLS:
+    # TODO Implement
     pass
 
-class GMM:  # TODO better name
+
+class FamaMacbeth:
+    # TODO Implement
+    pass
+
+
+class GMM:
+    # TODO Implement
     pass
