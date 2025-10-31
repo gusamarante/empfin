@@ -35,11 +35,12 @@ class TimeseriesReg:
         self.K = factors.shape[1]
 
         # Risk premia estimates are just the historical means
-        self.risk_premia = factors.mean()
+        self.lambdas = factors.mean()
         self.Omega = factors.cov()
 
         # OLS
-        factors.insert(0, "alpha", 1)
+        factors = pd.concat([pd.Series(1, index=factors.index, name="alpha"), factors], axis=1)
+
         X = factors.values
         Bhat = inv(X.T @ X) @ X.T @ assets.values
         self.resids = pd.DataFrame(
@@ -68,7 +69,7 @@ class TimeseriesReg:
             p-value of the Gibbons-Ross-Shanken statistic
         """
         f1 = (self.T - self.N - self.K) / self.N
-        f2 = 1 / (1 + self.risk_premia.T @ inv(self.Omega) @ self.risk_premia)
+        f2 = 1 / (1 + self.lambdas.T @ inv(self.Omega) @ self.lambdas)
         alpha = self.params.loc['alpha']
         f3 = alpha.T @ inv(self.Sigma) @ alpha
         grs = f1 * f2 * f3
