@@ -1,5 +1,5 @@
 from empfin import TimeseriesReg, TwoPassOLS, ff25p, ff5f
-from bayesfm import BFMOMIT, BFMGLS
+from bayesfm import BFMGLS
 
 
 # Read data
