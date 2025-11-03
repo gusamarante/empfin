@@ -1,6 +1,7 @@
 bayesfm
 matplotlib
 numpy
+openpyxl
 pandas
 plottable
 scipy
