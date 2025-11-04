@@ -84,6 +84,5 @@ def cross_correl(df1, df2):
 
 corr_simul = rets.dropna().corr()
 corr_cross1 = cross_correl(rets, rets.shift(1))
+corr_cross2 = cross_correl(rets.shift(1), rets.shift(-1))
 print(corr_cross1)
-
-# TODO PAREI AQUI -  terminar de montar a matriz de correlações cruzadas
