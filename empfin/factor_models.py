@@ -154,3 +154,11 @@ class FamaMacbeth:
 class GMM:
     # TODO Implement
     pass
+
+
+class MacroRiskPremium:
+    # TODO Documentation
+
+    def __init__(self, assets, macro_factor, Sbar):  # TODO o que eles usam para Sbar?
+        # TODO Documentation
+        pass

@@ -1,9 +1,12 @@
-from empfin.factor_models import TimeseriesReg, TwoPassOLS
-from empfin.data_readers import ff25p, ff5f
+from empfin.factor_models import MacroRiskPremium, TimeseriesReg, TwoPassOLS
+from empfin.data_readers import ff25p, ff5f, us_gdp, ust_futures
 
 __all__ = [
+    "MacroRiskPremium",
+    "TimeseriesReg",
     "TwoPassOLS",
     "ff25p",
     "ff5f",
-    "TimeseriesReg",
+    "us_gdp",
+    "ust_futures",
 ]

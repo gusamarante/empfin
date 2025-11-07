@@ -36,3 +36,24 @@ def ff25p(sub_rf=True):
         ports = ports.sub(rf, axis=0).dropna(how="all")
 
     return ports
+
+
+def ust_futures():
+    # TODO Documentation
+    ust = pd.read_csv(
+        "../sample-data/UST Futures.csv",  # TODO add link to file online
+        index_col="date",
+        sep=";",
+    )
+    ust.index = pd.to_datetime(ust.index)
+    return ust
+
+def us_gdp():
+    # TODO Documentation
+    gdp = pd.read_csv(
+        "../sample-data/GDP.csv",  # TODO add link to file online
+        index_col="observation_date",
+    )
+    gdp.index = pd.to_datetime(gdp.index)
+    gdp = gdp.resample("QE").last()["GDP"]
+    return gdp
