@@ -183,11 +183,23 @@ class MacroRiskPremium:
 
     def _run_gibbs(self):
 
+        # Auxiliar matrices that do NOT update every draw
+        G = self.macro_factor.values[self.s_bar:]
+        mu_g = self.macro_factor.mean()
+        G_bar = G - mu_g
+
         # Starting points
-        ups = np.zeros((self.k, self.t))
-        # TODO build the starting points of the sampler with the right shapes.
+        ups = np.zeros((self.k, self.t))  # latent factors
+        mu_ups = ups.mean(axis=1).reshape(self.k, -1)
+        eta_g = np.zeros((self.k, 1))
+        rho_g = np.insert(np.zeros(self.s_bar + 1), 0, mu_g).reshape(-1,1)
+        V_rho = self._build_V_rho(ups, mu_ups, eta_g)  # TODO parei aqui
 
         return 1
+
+    @staticmethod
+    def _build_V_rho(ups, mu_ups, eta_g):
+        return 1  # TODO PAREI AQUI, CONTRUIR ESSA MATRIZ
 
     def _get_number_latent_factors(self):
         retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
