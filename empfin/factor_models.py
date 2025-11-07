@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from numpy.linalg import inv
+from numpy.linalg import inv, eigvals
 from scipy.stats import f
 
 
@@ -158,7 +158,44 @@ class GMM:
 
 class MacroRiskPremium:
     # TODO Documentation
+    k_max = 15
 
-    def __init__(self, assets, macro_factor, Sbar):  # TODO o que eles usam para Sbar?
+    def __init__(self, assets, macro_factor, s_bar, n_draws=100, k=None):
         # TODO Documentation
-        pass
+        #  None or int. if s_bar is None, select the order automatically
+
+        # Simple attributes
+        self.assets = assets
+        self.macro_factor = macro_factor
+        self.t, self.n = assets.shape
+        self.s_bar = s_bar  # TODO can be inferred from time freq
+        self.n_draws = n_draws
+
+        # select number of latent factors
+        if k is None:
+            self.k = self._get_number_latent_factors()
+        else:
+            assert isinstance(k, int), "`k` must be an integer"
+            self.k = k
+
+        # Run the gibbs sampler
+        self.draws = self._run_gibbs()
+
+    def _run_gibbs(self):
+
+        # Starting points
+        ups = np.zeros((self.k, self.t))
+        # TODO build the starting points of the sampler with the right shapes.
+
+        return 1
+
+    def _get_number_latent_factors(self):
+        retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
+        eigv = np.sort(eigvals(retp_ret))[::-1]
+        gamma_hat = np.median(eigv[:self.k_max])
+        phi_nt = 0.5 * gamma_hat * np.log(self.t * self.n) * (self.t**(-0.5) + self.n**(-0.5))
+        j = (np.arange(len(eigv)) + 1)
+        grid = (eigv / (self.t * self.n)) + j * phi_nt
+        k_hat  = np.argmin(grid) + 1
+        return k_hat
+
