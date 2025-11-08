@@ -206,7 +206,7 @@ class MacroRiskPremium:
         B_r = np.zeros((self.k + 1, self.n))
 
         # Dataframe to save the draws
-        draws_lambda_g = pd.DataFrame(columns=range(self.s_bar))
+        draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
         for dd in tqdm(range(self.n_draws)):
             # TODO loop probably starts here
             # ----- STEP 1 -----

@@ -1,5 +1,6 @@
 from empfin import MacroRiskPremium, ust_futures, us_gdp
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 # Grab and transform data
@@ -16,11 +17,9 @@ mrp = MacroRiskPremium(
     assets=trackers,
     macro_factor=gdp,
     s_bar=8,
-    # k=2,
+    # k=1,
     n_draws=1000,
 )
-
-print(mrp.draws_lambda_g)
-
-
-
+mrp.draws_lambda_g.hist()
+plt.tight_layout()
+plt.show()
