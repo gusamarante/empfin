@@ -1,10 +1,8 @@
 bayesfm
 matplotlib
 numpy
-openpyxl
 pandas
 plottable
-scikit-learn
 scipy
 setuptools
 statsmodels

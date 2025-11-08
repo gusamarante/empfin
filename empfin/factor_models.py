@@ -4,6 +4,7 @@ from numpy.linalg import inv, eigvals
 from scipy.stats import f, invgamma, multivariate_normal, invwishart, matrix_normal, norm
 from numpy.lib.stride_tricks import sliding_window_view
 from scipy.linalg import cholesky
+from tqdm import tqdm
 
 
 class TimeseriesReg:
@@ -182,7 +183,7 @@ class MacroRiskPremium:
             self.k = k
 
         # Run the gibbs sampler
-        self.draws = self._run_gibbs()
+        self.draws_lambda_g = self._run_gibbs()
 
     def _run_gibbs(self):
 
@@ -202,71 +203,91 @@ class MacroRiskPremium:
         rho_g = np.insert(np.zeros(self.s_bar + 1), 0, mu_g).reshape(-1,1)
         B_r = np.zeros((self.k + 1, self.n))
 
-        # TODO loop probably starts here
-        # ----- STEP 1 -----
-        V_rho = self._build_V_rho(ups, mu_ups, eta_g, self.s_bar, self.t)
+        # Dataframe to save the draws
+        draws_lambda_g = pd.DataFrame(columns=range(self.s_bar))
+        for dd in tqdm(range(self.n_draws)):
+            # TODO loop probably starts here
+            # ----- STEP 1 -----
+            V_rho = self._build_V_rho(ups, mu_ups, eta_g, self.s_bar, self.t)
 
-        # Draw of \sigma^2_{wg}
-        s2_wg = invgamma.rvs(
-            0.5 * (self.t - self.s_bar),
-            scale=(0.5 * (G - V_rho @ rho_g).T @ (G - V_rho @ rho_g))[0, 0],
-        )
-        # TODO save this draw?
+            # Draw of \sigma^2_{wg}
+            s2_wg = invgamma.rvs(
+                0.5 * (self.t - self.s_bar),
+                scale=(0.5 * (G - V_rho @ rho_g).T @ (G - V_rho @ rho_g))[0, 0],
+            )
+            # TODO save this draw?
 
-        # Draw of rho_g
-        rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
-        wg_hat = G - V_rho @ rho_g_hat
-        Sigma_hat_rho = self._build_Sigma_hat(V_rho, self.t, self.s_bar, wg_hat)
-        rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=Sigma_hat_rho)
-        # TODO save this draw?
+            # Draw of rho_g
+            rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
+            wg_hat = G - V_rho @ rho_g_hat
+            Sigma_hat_rho = self._build_Sigma_hat(V_rho, self.t, self.s_bar, wg_hat)
+            rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=Sigma_hat_rho)
+            # TODO save this draw?
 
-        # Draw of eta_g
-        V_eta = self._build_V_eta(self.t, self.s_bar, self.k, rho_g[1:], ups, mu_ups)
-        eta_g_hat = inv(V_eta.T @ V_eta) @ V_eta.T @ G_bar  # arg1
-        weta_hat = G_bar - V_eta @ eta_g_hat
-        Sigma_hat_eta = self._build_Sigma_hat(V_eta, self.t, self.s_bar, weta_hat)
-        eta_g = multivariate_normal.rvs(mean=eta_g_hat.reshape(-1), cov=Sigma_hat_eta)
-        # TODO save this draw?
+            # Draw of eta_g
+            V_eta = self._build_V_eta(self.t, self.s_bar, self.k, rho_g[1:], ups, mu_ups)
+            eta_g_hat = inv(V_eta.T @ V_eta) @ V_eta.T @ G_bar  # arg1
+            weta_hat = G_bar - V_eta @ eta_g_hat
+            Sigma_hat_eta = self._build_Sigma_hat(V_eta, self.t, self.s_bar, weta_hat)
+            eta_g = multivariate_normal.rvs(
+                mean=eta_g_hat.reshape(-1),
+                cov=Sigma_hat_eta + D_r[1:, 1:] * 0.0001,
+            ).reshape(-1, 1)
+            # TODO save this draw?
 
-        # ----- STEP 2 -----
-        V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
+            # ----- STEP 2 -----
+            V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
 
-        # Draw of \Sigma_{wr}
-        Sigma_wr = invwishart.rvs(
-            df=self.t,
-            scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
-        )
+            # Draw of \Sigma_{wr}
+            Sigma_wr = invwishart.rvs(
+                df=self.t,
+                scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
+            )
 
-        # Draw of B_r
-        A = V_r.T @ V_r + D_r
-        B_r = matrix_normal.rvs(
-            mean=np.linalg.solve(A, V_r.T @ R),  # Efficient computation
-            rowcov=inv(A),
-            colcov=Sigma_wr,
-        )
-        # TODO save draw?
+            # Draw of B_r
+            A = V_r.T @ V_r + D_r
+            B_r = matrix_normal.rvs(
+                mean=np.linalg.solve(A, V_r.T @ R),  # Efficient computation
+                rowcov=inv(A),
+                colcov=Sigma_wr,
+            )
+            # TODO save draw?
 
-        # ----- STEP 3 -----
-        # Draw of \upsilon
-        beta_ups = B_r.T[:, 1:]
-        means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
-        cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
-        L = cholesky(cov, lower=True)
-        Z = norm.rvs(size=means.shape)
-        ups = means + L @ Z
-        # TODO save draw?
+            # ----- STEP 3 -----
+            # Draw of \upsilon
+            beta_ups = B_r.T[:, 1:]
+            means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
+            cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
+            L = cholesky(cov, lower=True)
+            Z = norm.rvs(size=means.shape)
+            ups = means + L @ Z
+            # TODO save draw?
 
-        # TODO parei aqui, passo 3 draw Sigma_ups
+            # Draw of \Sigma_{upsilon}
+            ups_bar = ups.mean(axis=1).reshape(-1, 1)
+            Sigma_ups = invwishart.rvs(
+                df=self.t - 1,
+                scale=ups @ ups.T - self.t * ups_bar @ ups_bar.T,
+            )
+            # TODO save draw?
 
+            mu_ups = multivariate_normal.rvs(
+                mean=ups_bar.reshape(-1),
+                cov=(1 / self.t) * Sigma_ups,
+            ).reshape(-1, 1)
+            # TODO save draw?
 
+            # ----- STEP 4 -----
+            Sigma_r = beta_ups @ Sigma_ups @ beta_ups.T + Sigma_wr
+            mu_tilde = mu_r + 0.5 * np.diag(Sigma_r).reshape(-1, 1)  # TODO not 100% shure this is correct
+            lambda_ups = inv(beta_ups.T @ beta_ups) @ beta_ups.T @ mu_tilde
 
+            rho = rho_g[1:]
 
+            # save the draws of lambda_g_s
+            draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
 
-
-
-
-
-        return 1
+        return draws_lambda_g
 
     @staticmethod
     def _build_V_eta(T, Sbar, K, rho, v, mu_v):
