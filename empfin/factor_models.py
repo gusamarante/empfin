@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 from numpy.linalg import inv, eigvals
-from scipy.stats import f
+from scipy.stats import f, invgamma, norm, multivariate_normal
+from numpy.lib.stride_tricks import sliding_window_view
 
 
 class TimeseriesReg:
@@ -158,6 +159,7 @@ class GMM:
 
 class MacroRiskPremium:
     # TODO Documentation
+    # TODO optimize with numba? Dont know if possible
     k_max = 15
 
     def __init__(self, assets, macro_factor, s_bar, n_draws=100, k=None):
@@ -184,22 +186,64 @@ class MacroRiskPremium:
     def _run_gibbs(self):
 
         # Auxiliar matrices that do NOT update every draw
-        G = self.macro_factor.values[self.s_bar:]
+        G = self.macro_factor.values[self.s_bar:].reshape(-1, 1)
         mu_g = self.macro_factor.mean()
-        G_bar = G - mu_g
+        G_bar = (G - mu_g)
 
         # Starting points
-        ups = np.zeros((self.k, self.t))  # latent factors
+        ups = np.random.rand(self.k, self.t)  # latent factors
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
-        eta_g = np.zeros((self.k, 1))
+        eta_g = np.random.rand(self.k, 1)
         rho_g = np.insert(np.zeros(self.s_bar + 1), 0, mu_g).reshape(-1,1)
-        V_rho = self._build_V_rho(ups, mu_ups, eta_g)  # TODO parei aqui
+
+        # TODO loop probably starts here
+        # ----- STEP 1 -----
+        V_rho = self._build_V_rho(ups, mu_ups, eta_g, self.s_bar, self.t)
+
+        # Draw of \sigma^2_{wg}
+        s2_wg = invgamma.rvs(
+            0.5 * (self.t - self.s_bar),
+            scale=(0.5 * (G - V_rho @ rho_g).T @ (G - V_rho @ rho_g))[0, 0],
+        )
+
+        # Draw of rho_g
+        rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
+        arg2 = self._get_Sigma_hat_rho(V_rho, self.t, self.s_bar, rho_g_hat, G)
+
+
+
+
+
+
+
+
+
 
         return 1
 
     @staticmethod
-    def _build_V_rho(ups, mu_ups, eta_g):
-        return 1  # TODO PAREI AQUI, CONTRUIR ESSA MATRIZ
+    def _get_Sigma_hat_rho(V_rho, T, Sbar, rho_g_hat, G):
+        w_hat_g = G - V_rho @ rho_g_hat
+
+        # TODO nested functions for each matrix will be easier to handle and maintain
+
+        sum1 = sum((w_hat_g[it, 0] ** 2) * V_rho[[it], :].T @ V_rho[[it], :] for it in range(G.shape[0]))
+
+
+        S_hat_rho = (1 / (T - Sbar))
+
+
+
+        Sigma_hat_rho = inv(V_rho.T @ V_rho) @ ((T - Sbar) * S_hat_rho) @ inv(V_rho.T @ V_rho)
+        return 1
+
+    @staticmethod
+    def _build_V_rho(ups, mu_ups, eta_g, sbar, t):
+        elements = (ups - mu_ups).T.dot(eta_g)
+        W = sliding_window_view(elements.reshape(-1), sbar + 1)
+        W = W[:, ::-1]  # Reverse column order
+        V_rho = np.concatenate([np.ones((t - sbar, 1)), W], axis=1)
+        return V_rho
 
     def _get_number_latent_factors(self):
         retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
@@ -210,4 +254,3 @@ class MacroRiskPremium:
         grid = (eigv / (self.t * self.n)) + j * phi_nt
         k_hat  = np.argmin(grid) + 1
         return k_hat
-

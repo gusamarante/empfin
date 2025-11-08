@@ -3,7 +3,8 @@ import numpy as np
 
 
 # Grab and transform data
-trackers = ust_futures()  # TODO increase sample of bonds
+trackers = ust_futures()
+trackers = trackers.drop(["10y Note Ultra", "30y Bond Ultra"], axis=1)
 trackers = np.log(trackers.resample("QE").last()).diff(1).dropna()
 
 gdp = us_gdp()
@@ -15,6 +16,7 @@ mrp = MacroRiskPremium(
     assets=trackers,
     macro_factor=gdp,
     s_bar=8,
+    k=2,
 )
 
 print(mrp.draws)
