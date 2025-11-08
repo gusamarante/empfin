@@ -234,6 +234,7 @@ class MacroRiskPremium:
                 mean=eta_g_hat.reshape(-1),
                 cov=Sigma_hat_eta + D_r[1:, 1:] * 0.0001,
             ).reshape(-1, 1)
+            eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
             # TODO save this draw?
 
             # ----- STEP 2 -----
