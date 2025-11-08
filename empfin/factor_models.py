@@ -205,11 +205,16 @@ class MacroRiskPremium:
             0.5 * (self.t - self.s_bar),
             scale=(0.5 * (G - V_rho @ rho_g).T @ (G - V_rho @ rho_g))[0, 0],
         )
+        # TODO save this draw?
 
         # Draw of rho_g
         rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
         arg2 = self._get_Sigma_hat_rho(V_rho, self.t, self.s_bar, rho_g_hat, G)
+        rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=arg2)
+        # TODO save this draw?
 
+        # Draw of eta_g
+        V_eta = self._build_V_eta()
 
 
 
@@ -222,20 +227,25 @@ class MacroRiskPremium:
         return 1
 
     @staticmethod
-    def _get_Sigma_hat_rho(V_rho, T, Sbar, rho_g_hat, G):
-        w_hat_g = G - V_rho @ rho_g_hat
+    def _build_V_eta():
+        return 1
 
-        # TODO nested functions for each matrix will be easier to handle and maintain
+    def _get_Sigma_hat_rho(self, V_rho, T, Sbar, rho_g_hat, G):
 
-        sum1 = sum((w_hat_g[it, 0] ** 2) * V_rho[[it], :].T @ V_rho[[it], :] for it in range(G.shape[0]))
+        wg_hat = G - V_rho @ rho_g_hat
 
-
-        S_hat_rho = (1 / (T - Sbar))
-
-
+        sum1 = sum(
+            (wg_hat[it, 0] ** 2) * V_rho[[it], :].T @ V_rho[[it], :]
+            for it in range(G.shape[0])
+        )
+        sum2 = sum(
+            self._build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l) * (1 - (l / (1 + Sbar)))
+            for l in range(1, Sbar + 1)
+        )
+        S_hat_rho = (1 / (T - Sbar)) * sum1 + sum2
 
         Sigma_hat_rho = inv(V_rho.T @ V_rho) @ ((T - Sbar) * S_hat_rho) @ inv(V_rho.T @ V_rho)
-        return 1
+        return Sigma_hat_rho
 
     @staticmethod
     def _build_V_rho(ups, mu_ups, eta_g, sbar, t):
@@ -244,6 +254,17 @@ class MacroRiskPremium:
         W = W[:, ::-1]  # Reverse column order
         V_rho = np.concatenate([np.ones((t - sbar, 1)), W], axis=1)
         return V_rho
+
+    @staticmethod
+    def _build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l):
+        Gamma = np.zeros((Sbar + 2, Sbar + 2))
+        for it in range(l, T-Sbar):
+            scalar = wg_hat[it, 0] * wg_hat[it - l, 0]
+            mat1 = V_rho[[it], :].T @ V_rho[[it - l], :]
+            mat2 = V_rho[[it - l], :].T @ V_rho[[it], :]
+            Gamma += scalar * (mat1 + mat2)
+        Gamma = Gamma * (1 / (T - Sbar - l))
+        return Gamma
 
     def _get_number_latent_factors(self):
         retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
