@@ -232,7 +232,7 @@ class MacroRiskPremium:
             Sigma_hat_eta = self._build_Sigma_hat(V_eta, self.t, self.s_bar, weta_hat)
             eta_g = multivariate_normal.rvs(
                 mean=eta_g_hat.reshape(-1),
-                cov=Sigma_hat_eta + D_r[1:, 1:] * 0.0001,
+                cov=Sigma_hat_eta,
             ).reshape(-1, 1)
             eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
             # TODO save this draw?
