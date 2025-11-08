@@ -201,6 +201,7 @@ class MacroRiskPremium:
         ups = np.random.rand(self.k, self.t)  # latent factors
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
         eta_g = np.random.rand(self.k, 1)
+        eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
         rho_g = np.insert(np.zeros(self.s_bar + 1), 0, mu_g).reshape(-1,1)
         B_r = np.zeros((self.k + 1, self.n))
 
@@ -280,6 +281,9 @@ class MacroRiskPremium:
             # TODO save draw?
 
             # ----- STEP 4 -----
+            if self.k == 1:
+                Sigma_ups = np.array([[Sigma_ups]])
+
             Sigma_r = beta_ups @ Sigma_ups @ beta_ups.T + Sigma_wr
             mu_tilde = mu_r + 0.5 * np.diag(Sigma_r).reshape(-1, 1)  # TODO not 100% shure this is correct
             lambda_ups = inv(beta_ups.T @ beta_ups) @ beta_ups.T @ mu_tilde

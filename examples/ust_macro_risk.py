@@ -16,7 +16,7 @@ mrp = MacroRiskPremium(
     assets=trackers,
     macro_factor=gdp,
     s_bar=8,
-    k=2,
+    # k=2,
     n_draws=1000,
 )
 
