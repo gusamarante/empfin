@@ -209,12 +209,21 @@ class MacroRiskPremium:
 
         # Draw of rho_g
         rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
-        arg2 = self._get_Sigma_hat_rho(V_rho, self.t, self.s_bar, rho_g_hat, G)
-        rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=arg2)
+        wg_hat = G - V_rho @ rho_g_hat
+        Sigma_hat_rho = self._build_Sigma_hat(V_rho, self.t, self.s_bar, wg_hat)
+        rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=Sigma_hat_rho)
         # TODO save this draw?
 
         # Draw of eta_g
-        V_eta = self._build_V_eta()
+        V_eta = self._build_V_eta(self.t, self.s_bar, self.k, rho_g[1:], ups, mu_ups)
+        eta_g_hat = inv(V_eta.T @ V_eta) @ V_eta.T @ G_bar  # arg1
+        weta_hat = G_bar - V_eta @ eta_g_hat
+        Sigma_hat_eta = self._build_Sigma_hat(V_eta, self.t, self.s_bar, weta_hat)
+        eta_g = multivariate_normal.rvs(mean=eta_g_hat.reshape(-1), cov=Sigma_hat_eta)
+        # TODO save this draw?
+
+        # ----- STEP 2 -----
+
 
 
 
@@ -227,24 +236,26 @@ class MacroRiskPremium:
         return 1
 
     @staticmethod
-    def _build_V_eta():
-        return 1
+    def _build_V_eta(T, Sbar, K, rho, v, mu_v):
+        v_c = v - mu_v
+        V_eta = np.empty((T - Sbar, K))
+        for t in range(T - Sbar):
+            V_eta[t, :] = np.sum(rho[:, None] * v_c[:, Sbar + t - np.arange(Sbar + 1)].T, axis=0)
 
-    def _get_Sigma_hat_rho(self, V_rho, T, Sbar, rho_g_hat, G):
+        return V_eta
 
-        wg_hat = G - V_rho @ rho_g_hat
-
+    def _build_Sigma_hat(self, V, T, Sbar, w_hat):
         sum1 = sum(
-            (wg_hat[it, 0] ** 2) * V_rho[[it], :].T @ V_rho[[it], :]
-            for it in range(G.shape[0])
+            (w_hat[it, 0] ** 2) * V[[it], :].T @ V[[it], :]
+            for it in range(w_hat.shape[0])
         )
         sum2 = sum(
-            self._build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l) * (1 - (l / (1 + Sbar)))
+            self._build_Gamma_hat_rho_l(T, Sbar, w_hat, V, l) * (1 - (l / (1 + Sbar)))
             for l in range(1, Sbar + 1)
         )
         S_hat_rho = (1 / (T - Sbar)) * sum1 + sum2
 
-        Sigma_hat_rho = inv(V_rho.T @ V_rho) @ ((T - Sbar) * S_hat_rho) @ inv(V_rho.T @ V_rho)
+        Sigma_hat_rho = inv(V.T @ V) @ ((T - Sbar) * S_hat_rho) @ inv(V.T @ V)
         return Sigma_hat_rho
 
     @staticmethod
@@ -257,8 +268,8 @@ class MacroRiskPremium:
 
     @staticmethod
     def _build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l):
-        Gamma = np.zeros((Sbar + 2, Sbar + 2))
-        for it in range(l, T-Sbar):
+        Gamma = np.zeros((V_rho.shape[1], V_rho.shape[1]))
+        for it in range(l, T - Sbar):
             scalar = wg_hat[it, 0] * wg_hat[it - l, 0]
             mat1 = V_rho[[it], :].T @ V_rho[[it - l], :]
             mat2 = V_rho[[it - l], :].T @ V_rho[[it], :]
