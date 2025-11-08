@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
 from numpy.linalg import inv, eigvals
-from scipy.stats import f, invgamma, norm, multivariate_normal
+from scipy.stats import f, invgamma, multivariate_normal, invwishart, matrix_normal, norm
 from numpy.lib.stride_tricks import sliding_window_view
+from scipy.linalg import cholesky
 
 
 class TimeseriesReg:
@@ -186,15 +187,20 @@ class MacroRiskPremium:
     def _run_gibbs(self):
 
         # Auxiliar matrices that do NOT update every draw
+        R = self.assets.values
+        mu_r = self.assets.mean().values.reshape(-1, 1)
         G = self.macro_factor.values[self.s_bar:].reshape(-1, 1)
         mu_g = self.macro_factor.mean()
         G_bar = (G - mu_g)
+        D_r = np.eye(self.k + 1)
+        D_r[0, 0] = 0
 
-        # Starting points
+        # Starting "draws"
         ups = np.random.rand(self.k, self.t)  # latent factors
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
         eta_g = np.random.rand(self.k, 1)
         rho_g = np.insert(np.zeros(self.s_bar + 1), 0, mu_g).reshape(-1,1)
+        B_r = np.zeros((self.k + 1, self.n))
 
         # TODO loop probably starts here
         # ----- STEP 1 -----
@@ -223,7 +229,34 @@ class MacroRiskPremium:
         # TODO save this draw?
 
         # ----- STEP 2 -----
+        V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
 
+        # Draw of \Sigma_{wr}
+        Sigma_wr = invwishart.rvs(
+            df=self.t,
+            scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
+        )
+
+        # Draw of B_r
+        A = V_r.T @ V_r + D_r
+        B_r = matrix_normal.rvs(
+            mean=np.linalg.solve(A, V_r.T @ R),  # Efficient computation
+            rowcov=inv(A),
+            colcov=Sigma_wr,
+        )
+        # TODO save draw?
+
+        # ----- STEP 3 -----
+        # Draw of \upsilon
+        beta_ups = B_r.T[:, 1:]
+        means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
+        cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
+        L = cholesky(cov, lower=True)
+        Z = norm.rvs(size=means.shape)
+        ups = means + L @ Z
+        # TODO save draw?
+
+        # TODO parei aqui, passo 3 draw Sigma_ups
 
 
 
