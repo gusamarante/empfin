@@ -17,7 +17,7 @@ mrp = MacroRiskPremium(
     macro_factor=gdp,
     s_bar=8,
     k=2,
-    n_draws=10,
+    n_draws=1000,
 )
 
 print(mrp.draws_lambda_g)
