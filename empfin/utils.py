@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def nearest_psd(sigma, strict_pd=True, delta=1e-10):
     # TODO documentation
     B = (sigma + sigma.T) / 2.0  # Symmetrize

@@ -5,7 +5,7 @@ from numpy.linalg import inv, eigvals
 from scipy.linalg import cholesky
 from scipy.stats import f, invgamma, multivariate_normal, invwishart, matrix_normal, norm
 from tqdm import tqdm
-from empfin.utils import nearest_psd
+import matplotlib.pyplot as plt
 
 
 class TimeseriesReg:
@@ -185,6 +185,41 @@ class MacroRiskPremium:
 
         # Run the gibbs sampler
         self.draws_lambda_g = self._run_gibbs()
+
+    def plot_premia_term_structure(self, size=5):
+
+        fig = plt.figure(figsize=(size * (16 / 7.3), size))
+
+        ax = plt.subplot2grid((1, 1), (0, 0))
+        ax.plot(self.draws_lambda_g.median(), label="median", color="tab:blue")
+        ax.fill_between(
+            self.draws_lambda_g.columns,
+            self.draws_lambda_g.quantile(0.05),
+            self.draws_lambda_g.quantile(0.95),
+            label="90% Credible Interval",
+            color="tab:blue",
+            alpha=0.2,
+            lw=0,
+        )
+        ax.axhline(0, color='black', lw=0.5)
+        ax.set(title=r"$\lambda_{g}^{S}$", xlabel=r"$S$")
+        # ax.xaxis.set_major_locator(MultipleLocator(1))
+        ax.xaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
+        ax.yaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="upper left")
+        #
+        # ax = plt.subplot2grid((2, 1), (1, 0))
+        # rects = ax.bar(correlogram["PAC"].index, correlogram["PAC"].values)
+        # ax.bar_label(rects, padding=1, fmt="{:.3f}")
+        # ax.axhline(0, color='black', lw=0.5)
+        # ax.set(ylim=(-1, 1), title="PAC Function")
+        # ax.xaxis.set_major_locator(MultipleLocator(1))
+        # ax.xaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
+        # ax.yaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
+
+        plt.tight_layout()
+        # TODO save fig
+        plt.show()
 
     def _run_gibbs(self):
 
