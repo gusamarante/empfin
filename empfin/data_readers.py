@@ -38,6 +38,17 @@ def ff25p(sub_rf=True):
     return ports
 
 
+def bond_futures():
+    # TODO Documentation
+    bonds = pd.read_csv(
+        "../sample-data/Bond Futures.csv",  # TODO add link to file online
+        index_col="date",
+        sep=";",
+    )
+    bonds.index = pd.to_datetime(bonds.index)
+    return bonds
+
+
 def ust_futures():
     # TODO Documentation
     ust = pd.read_csv(
