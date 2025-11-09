@@ -59,6 +59,16 @@ def ust_futures():
     ust.index = pd.to_datetime(ust.index)
     return ust
 
+def us_cpi():
+    # TODO Documentation
+    cpi = pd.read_csv(
+        "../sample-data/CPI.csv",  # TODO add link to file online
+        index_col="observation_date",
+    )
+    cpi.index = pd.to_datetime(cpi.index)
+    cpi = cpi.resample("ME").last()["CPI"]
+    return cpi
+
 def us_gdp():
     # TODO Documentation
     gdp = pd.read_csv(
