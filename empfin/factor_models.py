@@ -187,6 +187,7 @@ class MacroRiskPremium:
         self.draws_lambda_g = self._run_gibbs()
 
     def plot_premia_term_structure(self, size=5):
+        # TODO Documentation
 
         fig = plt.figure(figsize=(size * (16 / 7.3), size))
 
@@ -203,19 +204,9 @@ class MacroRiskPremium:
         )
         ax.axhline(0, color='black', lw=0.5)
         ax.set(title=r"$\lambda_{g}^{S}$", xlabel=r"$S$")
-        # ax.xaxis.set_major_locator(MultipleLocator(1))
         ax.xaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
         ax.yaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
         ax.legend(frameon=True, loc="upper left")
-        #
-        # ax = plt.subplot2grid((2, 1), (1, 0))
-        # rects = ax.bar(correlogram["PAC"].index, correlogram["PAC"].values)
-        # ax.bar_label(rects, padding=1, fmt="{:.3f}")
-        # ax.axhline(0, color='black', lw=0.5)
-        # ax.set(ylim=(-1, 1), title="PAC Function")
-        # ax.xaxis.set_major_locator(MultipleLocator(1))
-        # ax.xaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
-        # ax.yaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
 
         plt.tight_layout()
         # TODO save fig
