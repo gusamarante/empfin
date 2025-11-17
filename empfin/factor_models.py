@@ -234,7 +234,6 @@ class MacroRiskPremium:
         # Dataframe to save the draws
         draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
         for dd in tqdm(range(self.n_draws)):
-            # TODO loop probably starts here
             # ----- STEP 1 -----
             V_rho = self._build_V_rho(ups, mu_ups, eta_g, self.s_bar, self.t)
 
