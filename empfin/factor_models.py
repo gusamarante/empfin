@@ -160,14 +160,15 @@ class GMM:
     pass
 
 
-class MacroRiskPremium:
+class PersistentFactors:
     # TODO Documentation
     # TODO optimize with numba? Dont know if possible
     k_max = 15
 
-    def __init__(self, assets, macro_factor, s_bar, n_draws=100, k=None):
+    def __init__(self, assets, macro_factor, s_bar, n_draws=100, k=None, random_seed=None):
         # TODO Documentation
         #  None or int. if s_bar is None, select the order automatically
+        #  Add burnin
 
         # Simple attributes
         self.assets = assets
@@ -267,7 +268,7 @@ class MacroRiskPremium:
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
 
             # Draw of \Sigma_{wr}
-            Sigma_wr = invwishart.rvs(
+            Sigma_wr = invwishart.rvs(  # TODO Should be invgamma
                 df=self.t,
                 scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
             )
@@ -277,7 +278,7 @@ class MacroRiskPremium:
             B_r = matrix_normal.rvs(
                 mean=np.linalg.solve(A, V_r.T @ R),  # Efficient computation
                 rowcov=inv(A),
-                colcov=Sigma_wr,
+                colcov=np.diag(np.diag(Sigma_wr)),  # TODO is this enough?
             )
             # TODO save draw?
 

@@ -1,9 +1,0 @@
-bayesfm
-matplotlib
-numpy
-pandas
-plottable
-scipy
-setuptools
-statsmodels
-tqdm

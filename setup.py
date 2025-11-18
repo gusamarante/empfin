@@ -16,13 +16,16 @@ setup(
     version=VERSION,
     author="Gustavo Amarante",
     maintainer="Gustavo Amarante",
-    maintainer_email="developer@dsgepy.com",
+    maintainer_email="developer@dsgepy.com",  # TODO change this
     description=DESCRIPTION,
     long_description_content_type="text/markdown",
     long_description=long_description,
     packages=find_packages(),
     install_requires=[
-        # TODO add here
+        "scipy",
+        "matplotlib",
+        "numpy",
+        "pandas",
     ],
     keywords=[
         'asset pricing',
