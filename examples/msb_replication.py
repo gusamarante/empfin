@@ -6,7 +6,6 @@ data_df.index = pd.to_datetime(data_df.index)
 
 gdp = data_df.pop("GDP")
 
-# TODO parei aqui, começar a bater com o código dos autores
 pf = PersistentFactors(
     assets=data_df,
     macro_factor=gdp,
