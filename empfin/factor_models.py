@@ -225,9 +225,10 @@ class PersistentFactors:
         D_r[0, 0] = 0
 
         # Starting "draws"
-        ups = np.random.rand(self.k, self.t)  # latent factors
+        # TODO update these
+        ups = np.random.rand(self.k, self.t)  # latent factors  # TODO initialize with PCA
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
-        eta_g = np.random.rand(self.k, 1)
+        eta_g = np.random.rand(self.k, 1)  # TODO initialize like the authors
         eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
         rho_g = np.insert(np.zeros(self.s_bar + 1), 0, mu_g).reshape(-1,1)
         B_r = np.zeros((self.k + 1, self.n))
@@ -268,9 +269,16 @@ class PersistentFactors:
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
 
             # Draw of \Sigma_{wr}
-            Sigma_wr = invwishart.rvs(  # TODO Should be invgamma
-                df=self.t,
-                scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
+            # Sigma_wr = invwishart.rvs(
+            #     df=self.t,
+            #     scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
+            # )
+
+            Sigma_wr = np.diag(
+                invgamma.rvs(
+                    self.t - self.k - 1,
+                    scale=np.diag((1 / self.t) * (R - V_r @ B_r).T @ (R - V_r @ B_r)),
+                )
             )
 
             # Draw of B_r
@@ -278,7 +286,7 @@ class PersistentFactors:
             B_r = matrix_normal.rvs(
                 mean=np.linalg.solve(A, V_r.T @ R),  # Efficient computation
                 rowcov=inv(A),
-                colcov=np.diag(np.diag(Sigma_wr)),  # TODO is this enough?
+                colcov=Sigma_wr,
             )
             # TODO save draw?
 

@@ -11,9 +11,8 @@ pf = PersistentFactors(
     assets=data_df,
     macro_factor=gdp,
     s_bar=12,
-    n_draws=100,
+    n_draws=2000,
     k=5,
 )
+pf.plot_premia_term_structure()
 
-
-print(gdp)
