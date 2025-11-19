@@ -1,0 +1,10 @@
+bayesfm
+matplotlib
+numpy
+pandas
+plottable
+scikit_learn
+scipy
+setuptools
+statsmodels
+tqdm

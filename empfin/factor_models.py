@@ -1,11 +1,20 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
-from numpy.linalg import inv, eigvals
+from numpy.linalg import eigvals, inv, svd
 from scipy.linalg import cholesky
-from scipy.stats import f, invgamma, multivariate_normal, invwishart, matrix_normal, norm
+from scipy.stats import (
+    f,
+    invgamma,
+    invwishart,
+    matrix_normal,
+    multivariate_normal,
+    norm,
+)
+from sklearn.decomposition import PCA
+import statsmodels.api as sm
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
 class TimeseriesReg:
@@ -224,13 +233,29 @@ class PersistentFactors:
         D_r = np.eye(self.k + 1)
         D_r[0, 0] = 0
 
-        # Starting "draws"
+        # PCs of Returns
+        pca = PCA(n_components=self.k)
+        pca.fit(self.assets)
+        V0 = pca.fit_transform(self.assets)
+        windows = sliding_window_view(V0, window_shape=self.s_bar + 1, axis=0)
+        windows = windows[:, ::-1, :]
+        V0_mat = windows.reshape(self.t - self.s_bar, (self.s_bar + 1) * self.k)
+        X = sm.add_constant(V0_mat)  # adds intercept as first column
+        model = sm.OLS(self.macro_factor.iloc[self.s_bar:].to_numpy(), X).fit()
+        beta_vec = model.params[1:]
+        beta_mat = beta_vec.reshape(self.k, self.s_bar + 1)
+        # the best rank-1 approximation direction for the columns of beta_mat, summarizes the dominant pattern in beta loadings
+        U, s, Vt = svd(beta_mat, full_matrices=False)
+
+        # Starting draw
         # TODO update these
-        ups = np.random.rand(self.k, self.t)  # latent factors  # TODO initialize with PCA
+        ups = V0.T  # latent factors
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
-        eta_g = np.random.rand(self.k, 1)  # TODO initialize like the authors
-        eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
-        rho_g = np.insert(np.zeros(self.s_bar + 1), 0, mu_g).reshape(-1,1)
+        # TODO generate the lagged factors matrix
+
+        rho_g = Vt[0, :].reshape(-1, 1) * s[0]
+        rho_g = np.insert(rho_g, 0, mu_g).reshape(-1,1)
+        eta_g = U[:, [0]] # TODO initialize like the authors
         B_r = np.zeros((self.k + 1, self.n))
 
         # Dataframe to save the draws
@@ -269,7 +294,7 @@ class PersistentFactors:
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
 
             # Draw of \Sigma_{wr}
-            # Sigma_wr = invwishart.rvs(
+            # Sigma_wr = invwishart.rvs(  # TODO remove this
             #     df=self.t,
             #     scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
             # )
