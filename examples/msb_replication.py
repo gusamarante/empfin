@@ -11,7 +11,8 @@ pf = PersistentFactors(
     macro_factor=gdp,
     s_bar=12,
     n_draws=2000,
-    k=5,
+    burnin=2000,
+    k=5,  # TODO let this loose
 )
 pf.plot_premia_term_structure()
 

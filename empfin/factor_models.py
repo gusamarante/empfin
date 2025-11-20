@@ -171,12 +171,19 @@ class GMM:
 
 class PersistentFactors:
     # TODO Documentation
-    # TODO optimize with numba? Dont know if possible
     k_max = 15
 
-    def __init__(self, assets, macro_factor, s_bar, n_draws=100, k=None, random_seed=None):
+    def __init__(
+            self,
+            assets,
+            macro_factor,
+            s_bar,
+            n_draws=1000,
+            burnin=1000,
+            k=None,
+    ):
         # TODO Documentation
-        #  None or int. if s_bar is None, select the order automatically
+        #  None or int. if k is None, select the order automatically
         #  Add burnin
 
         # Simple attributes
@@ -185,6 +192,7 @@ class PersistentFactors:
         self.t, self.n = assets.shape
         self.s_bar = s_bar  # TODO can be inferred from time freq
         self.n_draws = n_draws
+        self.burnin = burnin
 
         # select number of latent factors
         if k is None:
@@ -248,19 +256,16 @@ class PersistentFactors:
         U, s, Vt = svd(beta_mat, full_matrices=False)
 
         # Starting draw
-        # TODO update these
         ups = V0.T  # latent factors
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
-        # TODO generate the lagged factors matrix
-
         rho_g = Vt[0, :].reshape(-1, 1) * s[0]
         rho_g = np.insert(rho_g, 0, mu_g).reshape(-1,1)
-        eta_g = U[:, [0]] # TODO initialize like the authors
+        eta_g = U[:, [0]]
         B_r = np.zeros((self.k + 1, self.n))
 
         # Dataframe to save the draws
         draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
-        for dd in tqdm(range(self.n_draws)):
+        for dd in tqdm(range(self.n_draws + self.burnin)):
             # ----- STEP 1 -----
             V_rho = self._build_V_rho(ups, mu_ups, eta_g, self.s_bar, self.t)
 
@@ -294,7 +299,7 @@ class PersistentFactors:
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
 
             # Draw of \Sigma_{wr}
-            # Sigma_wr = invwishart.rvs(  # TODO remove this
+            # Sigma_wr = invwishart.rvs(  # TODO only for low dimension
             #     df=self.t,
             #     scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
             # )
@@ -344,7 +349,7 @@ class PersistentFactors:
                 Sigma_ups = np.array([[Sigma_ups]])
 
             Sigma_r = beta_ups @ Sigma_ups @ beta_ups.T + Sigma_wr
-            mu_tilde = mu_r + 0.5 * np.diag(Sigma_r).reshape(-1, 1)  # TODO not 100% shure this is correct
+            mu_tilde = mu_r + 0.5 * np.diag(Sigma_r).reshape(-1, 1)
             lambda_ups = inv(beta_ups.T @ beta_ups) @ beta_ups.T @ mu_tilde
 
             rho = rho_g[1:]
@@ -352,6 +357,7 @@ class PersistentFactors:
             # save the draws of lambda_g_s
             draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
 
+        draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
         return draws_lambda_g
 
     @staticmethod
