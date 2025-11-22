@@ -13,6 +13,7 @@ from scipy.stats import (
     norm,
 )
 from sklearn.decomposition import PCA
+from statsmodels.tsa.vector_ar.var_model import VAR
 import statsmodels.api as sm
 from tqdm import tqdm
 
@@ -181,10 +182,12 @@ class PersistentFactors:
             n_draws=1000,
             burnin=1000,
             k=None,
+            cond_vars=None,
+            var_order=2,  # TODO change to 1?
     ):
         # TODO Documentation
         #  None or int. if k is None, select the order automatically
-        #  Add burnin
+        #  Assure indexes match
 
         # Simple attributes
         self.assets = assets
@@ -193,6 +196,8 @@ class PersistentFactors:
         self.s_bar = s_bar  # TODO can be inferred from time freq
         self.n_draws = n_draws
         self.burnin = burnin
+        self.cond_vars = cond_vars
+        self.var_order = var_order
 
         # select number of latent factors
         if k is None:
@@ -201,8 +206,10 @@ class PersistentFactors:
             assert isinstance(k, int), "`k` must be an integer"
             self.k = k
 
-        # Run the gibbs sampler
-        self.draws_lambda_g = self._run_gibbs()
+        if cond_vars is None:
+            self.draws_lambda_g = self._run_unconditional_gibbs()
+        else:
+            self.draws_lambda_g = self._run_conditional_gibbs()
 
     def plot_premia_term_structure(self, size=5):
         # TODO Documentation
@@ -230,7 +237,7 @@ class PersistentFactors:
         # TODO save fig
         plt.show()
 
-    def _run_gibbs(self):
+    def _run_unconditional_gibbs(self):
 
         # Auxiliar matrices that do NOT update every draw
         R = self.assets.values
@@ -360,6 +367,193 @@ class PersistentFactors:
         draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
         return draws_lambda_g
 
+    def _run_conditional_gibbs(self):
+
+        # Auxiliar matrices that do NOT update every draw
+        R = self.assets.values
+        mu_r = self.assets.mean().values.reshape(-1, 1)
+        G = self.macro_factor.values[self.s_bar + self.var_order:].reshape(-1, 1)
+        mu_g = self.macro_factor.mean()
+        G_bar = (G - mu_g)
+        D_r = np.eye(self.k + 1)
+        D_r[0, 0] = 0
+
+        # PCs of Returns
+        pca = PCA(n_components=self.k)
+        pca.fit(self.assets)
+        V0 = pca.fit_transform(self.assets)
+        windows = sliding_window_view(V0, window_shape=self.s_bar + 1, axis=0)
+        windows = windows[:, ::-1, :]
+        V0_mat = windows.reshape(self.t - self.s_bar, (self.s_bar + 1) * self.k)
+        X = sm.add_constant(V0_mat)  # adds intercept as first column
+        model = sm.OLS(self.macro_factor.iloc[self.s_bar:].to_numpy(), X).fit()
+        beta_vec = model.params[1:]
+        beta_mat = beta_vec.reshape(self.k, self.s_bar + 1)
+        # the best rank-1 approximation direction for the columns of beta_mat, summarizes the dominant pattern in beta loadings
+        U, s, Vt = svd(beta_mat, full_matrices=False)
+
+
+        # Starting draw
+        ups = V0.T  # latent factors
+        mu_ups = ups.mean(axis=1).reshape(self.k, -1)
+        rho_g = Vt[0, :].reshape(-1, 1) * s[0]
+        rho_g = np.insert(rho_g, 0, mu_g).reshape(-1, 1)
+        eta_g = U[:, [0]]
+        B_r = np.zeros((self.k + 1, self.n))
+
+        # VAR
+        X_var = np.hstack([ups.T, self.cond_vars.values])
+        var = VAR(X_var).fit(self.var_order)
+        eps_ups = var.resid[:, :self.k].T
+        mu_eps_ups = eps_ups.mean(axis=1).reshape(-1, 1)
+        Phi = var.params
+        Sigma_eps = var.sigma_u
+        X0, X1 = self._get_var_matrices(X_var)
+        # TODO save Phi and Sigma_eps
+        # TODO save X0 and X1?
+
+
+
+        # Dataframe to save the draws
+        draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
+        for dd in tqdm(range(self.n_draws + self.burnin)):
+            # ----- STEP 1 -----
+            V_rho = self._build_V_rho(eps_ups, mu_eps_ups, eta_g, self.s_bar, self.t - self.var_order)
+
+            # Draw of \sigma^2_{wg}
+            s2_wg = invgamma.rvs(
+                0.5 * (self.t - self.s_bar),
+                scale=(0.5 * (G - V_rho @ rho_g).T @ (G - V_rho @ rho_g))[0, 0],
+            )
+            # TODO save this draw?
+
+            # Draw of rho_g
+            rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
+            wg_hat = G - V_rho @ rho_g_hat
+            Sigma_hat_rho = self._build_Sigma_hat(V_rho, self.t - self.var_order, self.s_bar, wg_hat)
+            rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=Sigma_hat_rho)
+            # TODO save this draw?
+
+            # Draw of eta_g
+            V_eta = self._build_V_eta(self.t - self.var_order, self.s_bar, self.k, rho_g[1:], ups, mu_ups)
+            eta_g_hat = inv(V_eta.T @ V_eta) @ V_eta.T @ G_bar  # arg1
+            weta_hat = G_bar - V_eta @ eta_g_hat
+            Sigma_hat_eta = self._build_Sigma_hat(V_eta, self.t - self.var_order, self.s_bar, weta_hat)
+            eta_g = multivariate_normal.rvs(mean=eta_g_hat.reshape(-1), cov=Sigma_hat_eta).reshape(-1, 1)
+            eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
+            # TODO save this draw?
+
+            # ----- STEP 2 -----
+            V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
+
+            # Draw of \Sigma_{wr}
+            # Sigma_wr = invwishart.rvs(  # TODO only for low dimension
+            #     df=self.t,
+            #     scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
+            # )
+
+            Sigma_wr = np.diag(
+                invgamma.rvs(
+                    self.t - self.k - 1,
+                    scale=np.diag((1 / self.t) * (R - V_r @ B_r).T @ (R - V_r @ B_r)),
+                )
+            )
+
+            # Draw of B_r
+            A = V_r.T @ V_r + D_r
+            B_r = matrix_normal.rvs(
+                mean=np.linalg.solve(A, V_r.T @ R),  # Efficient computation
+                rowcov=inv(A),
+                colcov=Sigma_wr,
+            )
+            # TODO save draw?
+
+            # ----- STEP 3 -----
+            # Draw of \upsilon
+            beta_ups = B_r.T[:, 1:]
+            means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
+            cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
+            L = cholesky(cov, lower=True)
+            Z = norm.rvs(size=means.shape)
+            ups = means + L @ Z
+            # TODO save draw?
+
+            # Draw of \Sigma_{upsilon}
+            ups_bar = ups.mean(axis=1).reshape(-1, 1)
+            Sigma_ups = invwishart.rvs(
+                df=self.t - 1,
+                scale=ups @ ups.T - self.t * ups_bar @ ups_bar.T,
+            )
+            # TODO save draw?
+
+            mu_ups = multivariate_normal.rvs(
+                mean=ups_bar.reshape(-1),
+                cov=(1 / self.t) * Sigma_ups,
+            ).reshape(-1, 1)
+            # TODO save draw?
+
+            # ----- STEP 4 -----
+            Sigma_eps = invwishart.rvs(
+                df=self.t - self.var_order,
+                scale=(X1 - X0 @ Phi).T @ (X1 - X0 @ Phi),
+            )
+            Phi = matrix_normal.rvs(
+                mean=inv(X0.T @ X0) @ X0.T @ X1,
+                rowcov=inv(X0.T @ X0),
+                colcov=Sigma_eps,
+            )
+            eps_ups = (X1 - X0 @ Phi)[:, :self.k].T
+            mu_eps_ups = eps_ups.mean(axis=1).reshape(-1, 1)
+
+            # ----- STEP 5 -----
+            if self.k == 1:
+                Sigma_ups = np.array([[Sigma_ups]])
+
+            Sigma_r = beta_ups @ Sigma_ups @ beta_ups.T + Sigma_wr
+            mu_tilde = mu_r + 0.5 * np.diag(Sigma_r).reshape(-1, 1)
+            lambda_ups = inv(beta_ups.T @ beta_ups) @ beta_ups.T @ mu_tilde
+
+            rho = rho_g[1:]
+
+            # save the draws of lambda_g_s
+            # TODO STOPED HERE - compute the lambdas as save the draws
+            forecasts = np.zeros((self.s_bar, self.k))
+            phi0 = Phi[0]
+            phi = Phi[1:].reshape(self.var_order, X_var.shape[1], X_var.shape[1])
+
+            for t in range(self.var_order, X_var.shape[0]):
+                history = X_var[t - self.var_order: t, :]
+                for s in range(self.s_bar):
+                    # Compute forecast at step s:
+                    pred = phi0.copy()
+                    for lag in range(self.var_order):
+                        pred += history[lag] @ phi[lag]
+
+                    # Store
+                    forecasts[s] = pred[:self.k]
+
+                    # Update history (insert new prediction at the top)
+                    history = np.vstack([pred, history[:-1]])
+
+                lmbd = 0
+                lmbd_t = pd.Series()
+                for s in range(self.s_bar):
+                    lmbd += (rho[s] * eta_g.T @ (lambda_ups + forecasts[s].reshape(-1, 1)))[0, 0]
+                    lmbd_t.loc[s] = lmbd
+
+                a = 1
+
+
+
+
+            draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series(
+                [np.mean(np.cumsum(rho[:S + 1])) for S in
+                 range(self.s_bar + 1)])
+
+        # draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
+        return draws_lambda_g
+
+
     @staticmethod
     def _build_V_eta(T, Sbar, K, rho, v, mu_v):
         v_c = v - mu_v
@@ -411,3 +605,12 @@ class PersistentFactors:
         grid = (eigv / (self.t * self.n)) + j * phi_nt
         k_hat  = np.argmin(grid) + 1
         return k_hat
+
+    def _get_var_matrices(self, X_var):
+        windows = sliding_window_view(X_var, window_shape=self.var_order, axis=0)
+        lags_3d = windows[:self.t - self.var_order][:, ::-1, :]
+        lag_block = lags_3d.reshape(self.t - self.var_order, self.var_order * X_var.shape[1])
+        X0 = np.hstack([np.ones((self.t - self.var_order, 1)), lag_block])
+        X1 = X_var[self.var_order:, :]
+        return X0, X1
+
