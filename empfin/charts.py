@@ -7,6 +7,7 @@ from matplotlib.ticker import MultipleLocator
 
 def plot_correlogram(timeseries, size=6):
     # TODO documetation
+    # TODO nlags
     correlogram = pd.DataFrame(
         {
             "AC": acf(timeseries, nlags=20)[1:],

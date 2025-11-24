@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from empfin import PersistentFactors
+from empfin import RiskPremiaTermStructure
 
 data_path = Path(r"../sample-data")
 
@@ -75,7 +75,7 @@ start_date, end_date = assets.index.min(), assets.index.max()
 pred_vars = pred_vars[pred_vars.index >= start_date]
 pred_vars = pred_vars[pred_vars.index <= end_date]
 
-pf = PersistentFactors(
+pf = RiskPremiaTermStructure(
     assets=assets,
     macro_factor=pred_vars["GDP"],
     s_bar=12,

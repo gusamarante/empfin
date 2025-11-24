@@ -170,7 +170,7 @@ class GMM:
     pass
 
 
-class PersistentFactors:
+class RiskPremiaTermStructure:
     # TODO Documentation
     k_max = 15
 
@@ -213,6 +213,7 @@ class PersistentFactors:
 
     def plot_premia_term_structure(self, size=5):
         # TODO Documentation
+        # TODO add CI
 
         fig = plt.figure(figsize=(size * (16 / 7.3), size))
 
@@ -604,6 +605,7 @@ class PersistentFactors:
         j = (np.arange(len(eigv)) + 1)
         grid = (eigv / (self.t * self.n)) + j * phi_nt
         k_hat  = np.argmin(grid) + 1
+        print("selected number of factors is", k_hat)
         return k_hat
 
     def _get_var_matrices(self, X_var):

@@ -1,4 +1,4 @@
-from empfin import PersistentFactors, bond_futures, us_gdp, plot_correlogram, us_cpi
+from empfin import RiskPremiaTermStructure, bond_futures, us_gdp, plot_correlogram, us_cpi
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -22,7 +22,7 @@ plot_correlogram(gdp)
 # plot_correlogram(cpi)
 
 
-mrp = PersistentFactors(
+mrp = RiskPremiaTermStructure(
     assets=trackers,
     macro_factor=gdp,
     s_bar=4 * 2,
