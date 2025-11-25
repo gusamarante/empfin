@@ -276,7 +276,7 @@ class RiskPremiaTermStructure:
             self.draws_lambda_g.columns,
             self.draws_lambda_g.quantile((1 - ci) / 2),
             self.draws_lambda_g.quantile((1 + ci) / 2),
-            label=f"{100 * ci}% Credible Interval",
+            label=f"{round(100 * ci)}% Credible Interval",
             color="tab:blue",
             alpha=0.2,
             lw=0,

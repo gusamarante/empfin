@@ -1,16 +1,31 @@
-from empfin import RiskPremiaTermStructure, bond_futures, us_gdp, plot_correlogram, us_cpi
+from empfin import RiskPremiaTermStructure, bond_futures, us_gdp, plot_correlogram, us_cpi, cds_sov
 import numpy as np
-import matplotlib.pyplot as plt
 
 
-trackers = bond_futures()
-trackers = trackers[trackers.index >= "2001-01-01"].ffill().dropna(axis=1)
+# Bonds
+# trackers = bond_futures()
+# trackers = trackers[trackers.index >= "2001-01-01"].ffill().dropna(axis=1)
+
+# CDS
+trackers = cds_sov()
+trackers = trackers.resample("QE").last()
+trackers = trackers.drop(
+    [
+        "Argentina",
+        "Greece",
+        "Hungary",
+        "Ukraine",
+        "Russia",
+        "Venezuela",
+    ],
+    axis=1,
+)
 
 
 # With GDP
 gdp = us_gdp()
 gdp = np.log(gdp).diff(1)
-trackers = np.log(trackers.resample("QE").last()).diff(1).dropna()
+trackers = 100 * np.log(trackers.resample("QE").last()).diff(1).dropna()
 gdp, trackers = gdp.align(trackers, join='inner', axis=0)
 plot_correlogram(gdp)
 
@@ -26,8 +41,8 @@ mrp = RiskPremiaTermStructure(
     assets=trackers,
     factor=gdp,
     s_bar=4 * 2,
-    # k=2,
+    k=2,
+    burnin=100,
     n_draws=1000,
 )
-print("selected number of factors:", mrp.k)
 mrp.plot_premia_term_structure()

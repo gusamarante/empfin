@@ -79,6 +79,26 @@ def bond_futures():
     bonds.index = pd.to_datetime(bonds.index)
     return bonds
 
+def cds_sov():
+    """
+    Loads the Sovereign CDS excess return indexes
+    """
+    try:  # If repo is cloned, try to read locally for performance
+        cds = pd.read_csv(
+            "../sample-data/data_cds.csv",
+            index_col="date",
+            sep=";",
+        )
+    except FileNotFoundError:  # If fails, when the package is installed, grab online
+        cds = pd.read_csv(
+            GITHUB_DATA.joinpath("data_cds.csv"),
+            index_col="date",
+            sep=";",
+        )
+    cds.index = pd.to_datetime(cds.index)
+    cds.columns = cds.columns.str.replace("CDS ", "")
+    return cds
+
 def ust_futures():
     """
     Loads the US bond futures excess return indexes for 6 different maturities
