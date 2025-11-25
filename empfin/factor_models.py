@@ -47,7 +47,7 @@ class TimeseriesReg:
             timeseries of test assets returns
 
         factors: pandas.DataFrame
-            timeseries of the factor portfolios returns
+            timeseries of the factor portfolios returns  # TODO must be execess returns?
         """
 
         assert assets.index.equals(factors.index), \
@@ -108,10 +108,30 @@ class CrossSectionReg: # TODO Rename to Fama-MacBeth?
     """
 
     def __init__(self, assets, factors, cs_const=False):
-        # TODO DOcumentation
+        """
+        First, estimates betas with a linear model using time series regressions
+
+            r_i = a_i + beta_i * f + eps_i  # TODO when can this be tradeable or not?
+
+        Then estimate factor risk premia from a regression across assets of
+        average returns on the betas
+
+            E(r_i) = (const + ) beta_i * lambda + alpha_i
+
+        Parameters
+        ----------
+        assets: pandas.DataFrame
+            timeseries of test assets returns
+
+        factors: pandas.DataFrame
+            timeseries of the factors
+
+        cs_const: bool
+            If True, adds a constant to the cross-sectional regression
+        """
 
         # First stage is the timeseries regression
-        ts_reg = TimeseriesReg(assets.copy(), factors.copy())
+        ts_reg = TimeseriesReg(assets, factors)
         self.T = ts_reg.T
         self.N = ts_reg.N
         self.K = ts_reg.K
@@ -122,7 +142,7 @@ class CrossSectionReg: # TODO Rename to Fama-MacBeth?
 
         if cs_const:
             self.betas = pd.concat([pd.DataFrame(data=1, columns=self.betas.columns, index=["const"]), self.betas], axis=0)
-            # Add a row and columns of zeros for the varianca of the intercept
+            # Add a row and columns of zeros for the variance of the intercept
             self.Omega = np.vstack((np.zeros((1, self.Omega.shape[1])), self.Omega))
             self.Omega = np.hstack((np.zeros((self.Omega.shape[0], 1)), self.Omega))
 
@@ -154,10 +174,10 @@ class CrossSectionReg: # TODO Rename to Fama-MacBeth?
         # Equations 12.19 and 12.20 of Cochrane (2009)
         if cs_const:
             aux_covf = self.Omega.copy()[1:, 1:]
-            lhat = self.lambdas.copy().iloc[1:].values
+            lhat = self.lambdas.iloc[1:].values
         else:
             aux_covf = self.Omega.copy()
-            lhat = self.lambdas.copy().values
+            lhat = self.lambdas.values
 
         self.shanken_factor = 1 + lhat.T @ inv(aux_covf) @ lhat
 
@@ -233,19 +253,30 @@ class RiskPremiaTermStructure:
 
         self.draws_lambda_g = self._run_unconditional_gibbs()
 
-    def plot_premia_term_structure(self, size=5):
-        # TODO Documentation
-        # TODO add CI
+    def plot_premia_term_structure(self, ci=0.9, size=5):
+        """
+        Plots the unconditional risk premia term structure. The point estimate
+        is the median of the posterior draws and the shaded area represents the
+        `ci` credible intervals.
 
-        fig = plt.figure(figsize=(size * (16 / 7.3), size))
+        Parameters
+        ----------
+        ci
+        size
 
+        Returns
+        -------
+
+        """
+
+        plt.figure(figsize=(size * (16 / 7.3), size))
         ax = plt.subplot2grid((1, 1), (0, 0))
         ax.plot(self.draws_lambda_g.median(), label="median", color="tab:blue")
         ax.fill_between(
             self.draws_lambda_g.columns,
-            self.draws_lambda_g.quantile(0.05),
-            self.draws_lambda_g.quantile(0.95),
-            label="90% Credible Interval",
+            self.draws_lambda_g.quantile((1 - ci) / 2),
+            self.draws_lambda_g.quantile((1 + ci) / 2),
+            label=f"{100 * ci}% Credible Interval",
             color="tab:blue",
             alpha=0.2,
             lw=0,
@@ -257,7 +288,6 @@ class RiskPremiaTermStructure:
         ax.legend(frameon=True, loc="upper left")
 
         plt.tight_layout()
-        # TODO save fig
         plt.show()
 
     def _run_unconditional_gibbs(self):
