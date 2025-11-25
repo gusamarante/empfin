@@ -261,12 +261,11 @@ class RiskPremiaTermStructure:
 
         Parameters
         ----------
-        ci
-        size
+        ci: float
+            Size of the credibility intervals
 
-        Returns
-        -------
-
+        size: float
+            Relative size of the chart. Aspect ratio is constant at 16 / 7.3
         """
 
         plt.figure(figsize=(size * (16 / 7.3), size))

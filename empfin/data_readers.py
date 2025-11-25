@@ -153,3 +153,18 @@ def us_gdp():
     gdp.index = pd.to_datetime(gdp.index)
     gdp = gdp.resample("QE").last()["GDP"]
     return gdp
+
+def vix():
+    try:  # If repo is cloned, try to read locally for performance
+        v = pd.read_excel(
+            "../sample-data/VIXCLS.xlsx",
+            index_col="observation_date",
+        )
+    except FileNotFoundError:
+        v = pd.read_excel(
+            GITHUB_DATA.joinpath("VIXCLS.xlsx"),
+            index_col="observation_date",
+        )
+    v.index = pd.to_datetime(v.index)
+    v = v["VIXCLS"].rename("VIX")
+    return v

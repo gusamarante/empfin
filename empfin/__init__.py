@@ -7,6 +7,7 @@ from empfin.data_readers import (
     bond_futures,
     us_cpi,
     cds_sov,
+    vix,
 )
 from empfin.factor_models import RiskPremiaTermStructure, TimeseriesReg, CrossSectionReg
 
@@ -22,4 +23,5 @@ __all__ = [
     "us_cpi",
     "us_gdp",
     "ust_futures",
+    "vix",
 ]

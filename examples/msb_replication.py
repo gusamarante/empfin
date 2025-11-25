@@ -11,7 +11,7 @@ pf = RiskPremiaTermStructure(
     factor=gdp,
     s_bar=12,
     n_draws=2000,
-    burnin=2000,
+    burnin=100,
     k=5,
 )
 pf.plot_premia_term_structure()
