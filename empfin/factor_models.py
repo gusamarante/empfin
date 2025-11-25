@@ -18,6 +18,18 @@ from tqdm import tqdm
 
 
 class TimeseriesReg:
+    """
+    References:
+
+        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. and Scholes, Myron S.
+        The Capital Asset Pricing Model: Some Empirical Tests. Michael C. Jensen,
+        STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc., 1972,
+        Available at SSRN: https://ssrn.com/abstract=908569
+
+        Cochrane, John.
+        Asset Pricing: Revised Edition, 2009
+        Chapter 12.1
+    """
 
     def __init__(self, assets, factors):
         """
@@ -90,6 +102,12 @@ class TimeseriesReg:
         return grs, pvalue
 
 class TwoPassOLS:
+    """
+    References:
+        Cochrane, John.
+        Asset Pricing: Revised Edition, 2009
+        Chapter 12.2
+    """
 
     def __init__(self, assets, factors, cs_const=False):
         # TODO DOcumentation
