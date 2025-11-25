@@ -89,7 +89,6 @@ class TimeseriesReg:
         pvalue = 1 - f.cdf(grs, dfn=self.N, dfd=self.T - self.N - self.K)
         return grs, pvalue
 
-
 class TwoPassOLS:
 
     def __init__(self, assets, factors, cs_const=False):
@@ -153,44 +152,59 @@ class TwoPassOLS:
         )
         self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
 
+class RiskPremiaTermStructure:
+    """
+    This class implements the unconditional version of the model presented in
 
-class TwoPassGLS:
-    # TODO Implement
-    pass
+        Bryzgalova, Svetlana and Huang, Jiantao and Julliard, Christian,
+        Macro Strikes Back: Term Structure of Risk Premia (March 8, 2024).
+        Available at SSRN: https://ssrn.com/abstract=4752696
 
-
-class FamaMacbeth:
-    # TODO Implement
-    pass
-
-
-class GMM:
-    # TODO Implement
-    pass
-
-
-class PersistentFactors:
-    # TODO Documentation
+    The model identifies the shocks common to financial markets and the
+    factor (tradeable or not, potentially predictable), their propagation across
+    horizons, and the term structure of risk premia.
+    """
     k_max = 15
 
     def __init__(
             self,
             assets,
-            macro_factor,
+            factor,
             s_bar,
             n_draws=1000,
             burnin=1000,
             k=None,
     ):
-        # TODO Documentation
-        #  None or int. if k is None, select the order automatically
-        #  Add burnin
+        """
+        Parameters
+        ----------
+        assets: pandas.DataFrame
+            Timeseries of asset returns.
+
+        factor: pandas.Series
+            Factor from which to identify premia. Can be a tradable or
+            non-tradable factor.
+
+        s_bar: int
+            Number of lags used in the MA representation of the factor
+
+        n_draws: int
+            Number of draws (after the burnin) from the Gibbs sampling procedure
+
+        burnin: int
+            Number of beggining draws to be dropped from the analysis.
+
+        k: int
+            Number of common factors in the model. If None, selects the number
+            automatically based on information criteria
+        """
+        self._assertions(assets, factor)
 
         # Simple attributes
         self.assets = assets
-        self.macro_factor = macro_factor
+        self.macro_factor = factor
         self.t, self.n = assets.shape
-        self.s_bar = s_bar  # TODO can be inferred from time freq
+        self.s_bar = s_bar
         self.n_draws = n_draws
         self.burnin = burnin
 
@@ -201,11 +215,11 @@ class PersistentFactors:
             assert isinstance(k, int), "`k` must be an integer"
             self.k = k
 
-        # Run the gibbs sampler
-        self.draws_lambda_g = self._run_gibbs()
+        self.draws_lambda_g = self._run_unconditional_gibbs()
 
     def plot_premia_term_structure(self, size=5):
         # TODO Documentation
+        # TODO add CI
 
         fig = plt.figure(figsize=(size * (16 / 7.3), size))
 
@@ -230,7 +244,7 @@ class PersistentFactors:
         # TODO save fig
         plt.show()
 
-    def _run_gibbs(self):
+    def _run_unconditional_gibbs(self):
 
         # Auxiliar matrices that do NOT update every draw
         R = self.assets.values
@@ -410,4 +424,10 @@ class PersistentFactors:
         j = (np.arange(len(eigv)) + 1)
         grid = (eigv / (self.t * self.n)) + j * phi_nt
         k_hat  = np.argmin(grid) + 1
+        print("selected number of factors is", k_hat)
         return k_hat
+
+    @staticmethod
+    def _assertions(assets, factor):
+        assert factor.index.equals(assets.index), \
+            "the index for `factor` and `assets` must match"
