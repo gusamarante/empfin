@@ -79,7 +79,6 @@ def bond_futures():
     bonds.index = pd.to_datetime(bonds.index)
     return bonds
 
-
 def ust_futures():
     """
     Loads the US bond futures excess return indexes for 6 different maturities

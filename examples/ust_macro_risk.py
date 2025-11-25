@@ -24,7 +24,7 @@ plot_correlogram(gdp)
 
 mrp = RiskPremiaTermStructure(
     assets=trackers,
-    macro_factor=gdp,
+    factor=gdp,
     s_bar=4 * 2,
     # k=2,
     n_draws=1000,

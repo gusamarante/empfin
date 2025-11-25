@@ -1,3 +1,6 @@
+"""
+This file is not complete and does not work... for now
+"""
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -75,13 +78,4 @@ start_date, end_date = assets.index.min(), assets.index.max()
 pred_vars = pred_vars[pred_vars.index >= start_date]
 pred_vars = pred_vars[pred_vars.index <= end_date]
 
-pf = RiskPremiaTermStructure(
-    assets=assets,
-    macro_factor=pred_vars["GDP"],
-    s_bar=12,
-    n_draws=200,
-    burnin=10,
-    k=5,
-    cond_vars=pred_vars,
-)
-pf.plot_premia_term_structure()
+# TODO conditional model soon

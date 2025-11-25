@@ -8,10 +8,10 @@ gdp = data_df.pop("GDP")
 
 pf = RiskPremiaTermStructure(
     assets=data_df,
-    macro_factor=gdp,
+    factor=gdp,
     s_bar=12,
-    n_draws=100,
-    burnin=10,
+    n_draws=2000,
+    burnin=2000,
     k=5,
 )
 pf.plot_premia_term_structure()
