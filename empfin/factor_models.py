@@ -16,19 +16,21 @@ from sklearn.decomposition import PCA
 import statsmodels.api as sm
 from tqdm import tqdm
 
+# TODO replicar o PSET do ruy com as diferente linhas e métodos
+
 
 class TimeseriesReg:
     """
     References:
 
-        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. and Scholes, Myron S.
-        The Capital Asset Pricing Model: Some Empirical Tests. Michael C. Jensen,
+        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. and Scholes, Myron S.  # TODO check if true
+        "The Capital Asset Pricing Model: Some Empirical Tests". Michael C. Jensen,
         STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc., 1972,
         Available at SSRN: https://ssrn.com/abstract=908569
 
         Cochrane, John.
-        Asset Pricing: Revised Edition, 2009
-        Chapter 12.1
+        "Asset Pricing: Revised Edition", 2009
+        Section 12.1
     """
 
     def __init__(self, assets, factors):
@@ -46,10 +48,6 @@ class TimeseriesReg:
 
         factors: pandas.DataFrame
             timeseries of the factor portfolios returns
-
-        Notes
-        -----
-        Check section 12.1 of Cochrane (2009) for more details
         """
 
         assert assets.index.equals(factors.index), \
@@ -67,7 +65,7 @@ class TimeseriesReg:
         factors = pd.concat([pd.Series(1, index=factors.index, name="alpha"), factors], axis=1)
 
         X = factors.values
-        Bhat = inv(X.T @ X) @ X.T @ assets.values
+        Bhat = inv(X.T @ X) @ X.T @ assets.values  # TODO add regression from a library to get all the diagnostics
         self.resids = pd.DataFrame(
             data=assets.values - X @ Bhat,
             index=assets.index,
@@ -82,7 +80,7 @@ class TimeseriesReg:
 
     def grs_test(self):
         """
-        Runs the Gibbons-Ross-Shanken test to evaluate if all alphas are
+        Runs the Gibbons-Ross-Shanken test to evaluate if all alphas are  # TODO review this
         jointly equal to zero.
 
         Returns
@@ -101,9 +99,9 @@ class TimeseriesReg:
         pvalue = 1 - f.cdf(grs, dfn=self.N, dfd=self.T - self.N - self.K)
         return grs, pvalue
 
-class TwoPassOLS:
+class CrossSectionReg: # TODO Rename to Fama-MacBeth?
     """
-    References:
+    References:  # TODO add fama-macbeth
         Cochrane, John.
         Asset Pricing: Revised Edition, 2009
         Chapter 12.2
