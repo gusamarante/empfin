@@ -155,7 +155,7 @@ class TimeseriesReg:
             plt.suptitle(title)
 
         # Alphas and their CIs
-        ax = plt.subplot2grid((1, 2), (0, 0))
+        ax = plt.subplot2grid((2, 2), (0, 0))
         ax.set_title(r"$\alpha$ and CI")
         ax = self.params.loc['alpha'].plot(kind='bar', ax=ax, width=0.9)
         ax.axhline(0, color="black", lw=0.5)
@@ -169,8 +169,23 @@ class TimeseriesReg:
         ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
 
+        # lambdas and their CIs
+        ax = plt.subplot2grid((2, 2), (1, 0))
+        ax.set_title(r"$\lambda$ and CI")
+        ax = self.lambdas.plot(kind='bar', ax=ax, width=0.9)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            self.lambdas.values,
+            yerr=np.sqrt(np.diag(self.Omega.values) / self.T) * 1.96,
+            ls='none',
+            ecolor='tab:orange',
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
         # Predicted VS actual average returns
-        ax = plt.subplot2grid((1, 2), (0, 1))
+        ax = plt.subplot2grid((2, 2), (0, 1), rowspan=2)
 
         predicted = self.params.drop('alpha').multiply(self.lambdas, axis=0).sum()
 
