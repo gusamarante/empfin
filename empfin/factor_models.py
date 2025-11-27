@@ -16,28 +16,26 @@ from sklearn.decomposition import PCA
 import statsmodels.api as sm
 from tqdm import tqdm
 
-# TODO replicar o PSET do ruy com as diferente linhas e métodos
-
 
 class TimeseriesReg:
     """
     References:
-
-        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. and Scholes, Myron S.  # TODO check if true
-        "The Capital Asset Pricing Model: Some Empirical Tests". Michael C. Jensen,
-        STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc., 1972,
-        Available at SSRN: https://ssrn.com/abstract=908569
-
         Cochrane, John.
         "Asset Pricing: Revised Edition", 2009
         Section 12.1
+
+        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. and Scholes, Myron S.
+        "The Capital Asset Pricing Model: Some Empirical Tests". Michael C. Jensen,
+        STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc., 1972,
+        Available at SSRN: https://ssrn.com/abstract=908569
     """
 
     def __init__(self, assets, factors):
         """
-        Estimates for a linear factor model using time series regressions.
+        Estimates a linear factor model for each asset using time series
+        regressions.
 
-            r_i = alpha_i + beta_i * f + eps_i
+            r_it = alpha_i + beta_i * ft + eps_it
 
         All factors f must be excess returns.
 
@@ -46,50 +44,100 @@ class TimeseriesReg:
         assets: pandas.DataFrame
             timeseries of test assets returns
 
-        factors: pandas.DataFrame
-            timeseries of the factor portfolios returns  # TODO must be execess returns?
+        factors: pandas.DataFrame, pandas.Series
+            timeseries of excess returns of factor portfolios
+
+        Attributes
+        ----------
+        T: int
+            timeseries sample size
+
+        N: int
+            number of test assets
+
+        K: int
+            number of factors
+
+        lambdas: pandas.Series
+            Risk premia estimates, which in the timeseries regression is simply
+            the historical average of returns of the factor portfolios
+
+        Omega: pandas.DataFrame
+            Covariance matrix of the factor portfolios
+
+        params: pandas.DataFrame
+            Estimated regression coefficients
+
+        cov_beta: dict
+            A dictionary with the assets as keys and their covariance matrix of
+            the OLS estimator as the values
+
+        resids: pandas.DataFrame
+            Timeseries of the residuals for each of the rergessions
+
+        Sigma: pandas.DataFrame
+            Covariance matrix of the residuals of each regression
         """
 
         assert assets.index.equals(factors.index), \
             "Indexes of `assets` and `factors` must be the same"
 
-        self.T = assets.shape[0]
-        self.N = assets.shape[1]
-        self.K = factors.shape[1]
+        if isinstance(assets, pd.Series):
+            assets = assets.to_frame()
 
-        # Risk premia estimates are just the historical means
-        self.lambdas = factors.mean()
+        if isinstance(factors, pd.Series):
+            factors = factors.to_frame()
+
+        self.T = assets.shape[0]  # timeseries sample size
+        self.N = assets.shape[1]  # number of test assets
+        self.K = factors.shape[1]  # number of factors
+
+        self.lambdas = factors.mean()  # Risk premia estimates are their historical means
         self.Omega = factors.cov()
 
-        # OLS
-        factors = pd.concat([pd.Series(1, index=factors.index, name="alpha"), factors], axis=1)
+        # OLS for each asset
+        params = []
+        params_se = []
+        resids = []
+        tstats = []
+        pvalues = []
+        self.cov_beta = dict()
+        for asst in assets.columns:
+            model = sm.OLS(assets[asst], sm.add_constant(factors))
+            res = model.fit()
 
-        X = factors.values
-        Bhat = inv(X.T @ X) @ X.T @ assets.values  # TODO add regression from a library to get all the diagnostics
-        self.resids = pd.DataFrame(
-            data=assets.values - X @ Bhat,
-            index=assets.index,
-            columns=assets.columns,
-        )
-        self.params = pd.DataFrame(
-            data=Bhat,
-            index=factors.columns,
-            columns=assets.columns,
-        )
-        self.Sigma = self.resids.values.T @ self.resids.values
+            params.append(res.params.rename(asst))
+            params_se.append(res.bse.rename(asst))
+            resids.append(res.resid.rename(asst))
+            tstats.append(res.tvalues.rename(asst))
+            pvalues.append(res.pvalues.rename(asst))
+
+            self.cov_beta[asst] = res.cov_params()
+
+        self.params = pd.concat(params, axis=1).rename({"const": "alpha"}, axis=0)
+        self.params_se = pd.concat(params_se, axis=1).rename({"const": "alpha"}, axis=0)
+        self.tstats = pd.concat(tstats, axis=1).rename({"const": "alpha"}, axis=0)
+        self.pvalues = pd.concat(pvalues, axis=1).rename({"const": "alpha"}, axis=0)
+
+        self.resids = pd.concat(resids, axis=1)
+        self.Sigma = self.resids.cov()
 
     def grs_test(self):
         """
-        Runs the Gibbons-Ross-Shanken test to evaluate if all alphas are  # TODO review this
+        Runs the Gibbons-Ross-Shanken test to evaluate if all alphas are
         jointly equal to zero.
 
         Returns
         -------
         grs: float
-            Gibbons-Ross-Shanken statistic
+            Gibbons-Ross-Shanken test statistic
 
         pvalue: float
             p-value of the Gibbons-Ross-Shanken statistic
+
+        Notes
+        -----
+        Equation 12.6 from Cochrane (2009)
         """
         f1 = (self.T - self.N - self.K) / self.N
         f2 = 1 / (1 + self.lambdas.T @ inv(self.Omega) @ self.lambdas)
