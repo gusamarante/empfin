@@ -92,6 +92,7 @@ class TimeseriesReg:
         self.N = assets.shape[1]  # number of test assets
         self.K = factors.shape[1]  # number of factors
 
+        self.ret_mean = assets.mean()
         self.lambdas = factors.mean()  # Risk premia estimates are their historical means
         self.Omega = factors.cov()
 
@@ -146,6 +147,45 @@ class TimeseriesReg:
         grs = f1 * f2 * f3
         pvalue = 1 - f.cdf(grs, dfn=self.N, dfd=self.T - self.N - self.K)
         return grs, pvalue
+
+    def plot_alpha_pred(self, size=6, title=None):
+        # TODO documentation
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        if title is not None:
+            plt.suptitle(title)
+
+        # Alphas and their CIs
+        ax = plt.subplot2grid((1, 2), (0, 0))
+        ax.set_title(r"$\alpha$ and CI")
+        ax = self.params.loc['alpha'].plot(kind='bar', ax=ax, width=0.9)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            self.params.loc['alpha'].values,
+            yerr=self.params_se.loc['alpha'].values * 1.96,
+            ls='none',
+            ecolor='tab:orange',
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        # Predicted VS actual average returns
+        ax = plt.subplot2grid((1, 2), (0, 1))
+
+        predicted = self.params.drop('alpha').multiply(self.lambdas, axis=0).sum()
+
+        ax.scatter(predicted, self.ret_mean, label="Test Assets")
+        ax.axline((0, 0), (1, 1), color="tab:orange", ls="--", label="45 Degree Line")
+        ax.axhline(0, color="black", lw=0.5)
+        ax.axvline(0, color="black", lw=0.5)
+        ax.set_xlabel(r"Predicted Average Return $\beta_i^{\prime} \lambda$")
+        ax.set_ylabel(r"Realized Average Return $E(r_i)$")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="upper left")
+
+        plt.tight_layout()
+        plt.show()
 
 class CrossSectionReg: # TODO Rename to Fama-MacBeth?
     """
