@@ -24,7 +24,7 @@ class TimeseriesReg:
         "Asset Pricing: Revised Edition", 2009
         Section 12.1
 
-        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. and Scholes, Myron S.
+        Jensen, Michael C. and Black, Fischer and Scholes, Myron S.
         "The Capital Asset Pricing Model: Some Empirical Tests". Michael C. Jensen,
         STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc., 1972,
         Available at SSRN: https://ssrn.com/abstract=908569
@@ -149,7 +149,19 @@ class TimeseriesReg:
         return grs, pvalue
 
     def plot_alpha_pred(self, size=6, title=None):
-        # TODO documentation
+        """
+        Plots the alphas and lambdas together with their confidence intervals,
+        and compares the predicted average return with the realized average
+        returns.
+        k
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+        """
         plt.figure(figsize=(size * (16 / 7.3), size))
         if title is not None:
             plt.suptitle(title)
@@ -201,6 +213,7 @@ class TimeseriesReg:
 
         plt.tight_layout()
         plt.show()
+        plt.close()
 
 class CrossSectionReg: # TODO Rename to Fama-MacBeth?
     """
@@ -239,6 +252,8 @@ class CrossSectionReg: # TODO Rename to Fama-MacBeth?
         self.N = ts_reg.N
         self.K = ts_reg.K
         self.betas = ts_reg.params.drop('alpha')
+
+        # TODO right up to here
         self.avg_ret = assets.mean()
         self.Sigma = ts_reg.Sigma
         self.Omega = ts_reg.Omega

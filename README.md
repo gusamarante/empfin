@@ -1,5 +1,5 @@
 # empfin
+**UNDER CONSTRUCTUTION**
 
-Resources for empirical finance
-
-Under construction...
+Available models for estimation of risk premia:
+- `TimeseriesReg`: Timeseries regression. The single-pass OLS
