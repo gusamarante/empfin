@@ -17,6 +17,12 @@ import statsmodels.api as sm
 from tqdm import tqdm
 
 
+# TODO models to implement
+#  FamaMacbeth,
+#  GMM,
+#  GLS
+
+
 class TimeseriesReg:
     """
     References:
@@ -215,9 +221,10 @@ class TimeseriesReg:
         plt.show()
         plt.close()
 
-class CrossSectionReg: # TODO Rename to Fama-MacBeth?
+
+class CrossSectionReg:
     """
-    References:  # TODO add fama-macbeth
+    References:
         Cochrane, John.
         Asset Pricing: Revised Edition, 2009
         Chapter 12.2
@@ -305,6 +312,7 @@ class CrossSectionReg: # TODO Rename to Fama-MacBeth?
             columns=self.lambdas.index,
         )
         self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
+
 
 class RiskPremiaTermStructure:
     """
