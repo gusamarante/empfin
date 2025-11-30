@@ -18,8 +18,8 @@ from tqdm import tqdm
 
 
 # TODO models to implement
-#  FamaMacbeth,
-#  GMM,
+#  Fama-Macbeth
+#  GMM
 #  GLS
 
 
@@ -251,7 +251,12 @@ class CrossSectionReg:
 
         cs_const: bool
             If True, adds a constant to the cross-sectional regression
+
+        Attributes
+        ----------
+        # TODO document the attributes
         """
+        self.avg_ret = assets.mean()
 
         # First stage is the timeseries regression
         ts_reg = TimeseriesReg(assets, factors)
@@ -259,12 +264,10 @@ class CrossSectionReg:
         self.N = ts_reg.N
         self.K = ts_reg.K
         self.betas = ts_reg.params.drop('alpha')
+        self.Sigma = ts_reg.Sigma  # 1st pass residual covariance
+        self.Omega = ts_reg.Omega  # Factor Covariance
 
-        # TODO right up to here
-        self.avg_ret = assets.mean()
-        self.Sigma = ts_reg.Sigma
-        self.Omega = ts_reg.Omega
-
+        # TODO right up to here, use statsmodels for the second stage regression
         if cs_const:
             self.betas = pd.concat([pd.DataFrame(data=1, columns=self.betas.columns, index=["const"]), self.betas], axis=0)
             # Add a row and columns of zeros for the variance of the intercept
