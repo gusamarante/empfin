@@ -251,10 +251,6 @@ class CrossSectionReg:
 
         cs_const: bool
             If True, adds a constant to the cross-sectional regression
-
-        Attributes
-        ----------
-        # TODO document the attributes
         """
         self.avg_ret = assets.mean()
 
@@ -264,55 +260,47 @@ class CrossSectionReg:
         self.N = ts_reg.N
         self.K = ts_reg.K
         self.betas = ts_reg.params.drop('alpha')
-        self.Sigma = ts_reg.Sigma  # 1st pass residual covariance
+        self.Sigma = ts_reg.Sigma  # Coavariance of all the residuals from all the 1st pass regressions
         self.Omega = ts_reg.Omega  # Factor Covariance
 
-        # TODO right up to here, use statsmodels for the second stage regression
+        # 2nd stage - cross sectional regression
         if cs_const:
-            self.betas = pd.concat([pd.DataFrame(data=1, columns=self.betas.columns, index=["const"]), self.betas], axis=0)
-            # Add a row and columns of zeros for the variance of the intercept
-            self.Omega = np.vstack((np.zeros((1, self.Omega.shape[1])), self.Omega))
-            self.Omega = np.hstack((np.zeros((self.Omega.shape[0], 1)), self.Omega))
+            X = sm.add_constant(self.betas.T)
+        else:
+            X = self.betas.T
 
-        X = self.betas.values.T
-        Lhat = inv(X.T @ X) @ X.T @ self.avg_ret
-        self.lambdas = pd.Series(
-            data=Lhat,
-            index=self.betas.index,
-        )
-        self.alphas = pd.Series(
-            data=self.avg_ret - X @ Lhat,
-            index=assets.columns,
-        )
+        model = sm.OLS(self.avg_ret, X)
+        res = model.fit()
+        self.lambdas = res.params
+        self.alphas = res.resid
 
         # Conventional OLS Estimator Covariance Matrix
         # Equations 12.12 and 12.13 of Cochrane (2009)
+        b = self.betas.T.values
+        S = self.Sigma.values
+        O = self.Omega.values
+
+        # TODO we use no value from the 2nd stage pass to compute these SEs. Should we?
         self.conv_cov_lambda_hat = pd.DataFrame(
-            data=(1 / self.T) * (inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega),
-            index=self.lambdas.index,
-            columns=self.lambdas.index,
+            data=(1 / self.T) * (inv(b.T @ b) @ b.T @ S @ b @ inv(b.T @ b) + O),
+            index=self.lambdas.index.drop('const', errors='ignore'),
+            columns=self.lambdas.index.drop('const', errors='ignore'),
         )
         self.conv_cov_alpha_hat = pd.DataFrame(
-            data=(1 / self.T) * (np.eye(self.N) - X @ inv(X.T @ X) @ X.T) @ self.Sigma @ (np.eye(self.N) - X @ inv(X.T @ X) @ X.T).T,
+            data=(1 / self.T) * ((np.eye(self.N) - b @ inv(b.T @ b) @ b.T) @ S @ (np.eye(self.N) - b @ inv(b.T @ b) @ b.T).T),
             index=assets.columns,
             columns=assets.columns,
         )
 
         # Shaken Correction for Covariance Matrices
         # Equations 12.19 and 12.20 of Cochrane (2009)
-        if cs_const:
-            aux_covf = self.Omega.copy()[1:, 1:]
-            lhat = self.lambdas.iloc[1:].values
-        else:
-            aux_covf = self.Omega.copy()
-            lhat = self.lambdas.values
-
-        self.shanken_factor = 1 + lhat.T @ inv(aux_covf) @ lhat
+        lhat = self.lambdas.drop('const', errors='ignore').values
+        self.shanken_factor = 1 + lhat.T @ inv(O) @ lhat
 
         self.shanken_cov_lambda_hat = pd.DataFrame(
-            data=(1 / self.T) * (self.shanken_factor * inv(X.T @ X) @ X.T @ self.Sigma @ X @ inv(X.T @ X) + self.Omega),
-            index=self.lambdas.index,
-            columns=self.lambdas.index,
+            data=(1 / self.T) * (self.shanken_factor * inv(b.T @ b) @ b.T @ S @ b @ inv(b.T @ b) + O),
+            index=self.lambdas.index.drop('const', errors='ignore'),
+            columns=self.lambdas.index.drop('const', errors='ignore'),
         )
         self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
 
@@ -357,7 +345,7 @@ class RiskPremiaTermStructure:
             Number of draws (after the burnin) from the Gibbs sampling procedure
 
         burnin: int
-            Number of beggining draws to be dropped from the analysis.
+            Number of draws from the beggining to be dropped from the analysis
 
         k: int
             Number of common factors in the model. If None, selects the number
