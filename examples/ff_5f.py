@@ -40,8 +40,4 @@ cs_reg_mkt_noconst = CrossSectionReg(
     cs_const=False,
 )
 
-# # --- GRS test ---
-# print(ts_reg_5f.grs_test())
-# ts_reg_5f.plot_alpha_pred(title="Timeseries Regression - 5 Factor Model")
-
 # TODO Compare all the lambdas

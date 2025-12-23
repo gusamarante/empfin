@@ -21,6 +21,7 @@ from tqdm import tqdm
 #  Fama-Macbeth
 #  GMM
 #  GLS
+#  Move bayesfm here as well
 
 
 class TimeseriesReg:
