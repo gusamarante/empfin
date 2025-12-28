@@ -18,11 +18,12 @@ from tqdm import tqdm
 
 
 # TODO models to implement
+#  Non-tradable factor (CLM)
+#  Cross-sectional regression
 #  Fama-Macbeth
 #  GMM
 #  GLS
 #  Move bayesfm here as well
-#  Non-tradable factor (CLM)
 
 
 class TimeseriesReg:
@@ -227,6 +228,25 @@ class TimeseriesReg:
         plt.tight_layout()
         plt.show()
         plt.close()
+
+
+class NonTradableFactors:
+    """
+    References:
+        Campbell, John Y., Andrew W. Lo, and Archie Craig MacKinlay (2012)
+        "The Econometrics of Financial Markets"
+        Princeton University Press
+        Section 6.2.3
+    """
+
+    def __init__(self, assets, factors):
+        # TODO Documentation
+        # TODO Implement
+        #  Unconstrained model (Stacked)
+        #  Constrained Model  (Iterated MLE)
+        #  Factor risk premia  (from the model parameters)
+        #  "GRS" test  (CLM 6.2.42)
+        pass
 
 
 class CrossSectionReg:
