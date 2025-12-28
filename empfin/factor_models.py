@@ -22,19 +22,25 @@ from tqdm import tqdm
 #  GMM
 #  GLS
 #  Move bayesfm here as well
+#  Non-tradable factor (CLM)
 
 
 class TimeseriesReg:
     """
     References:
-        Cochrane, John.
-        "Asset Pricing: Revised Edition", 2009
+        Cochrane, John. (2009)
+        "Asset Pricing: Revised Edition"
         Section 12.1
 
-        Jensen, Michael C. and Black, Fischer and Scholes, Myron S.
-        "The Capital Asset Pricing Model: Some Empirical Tests". Michael C. Jensen,
-        STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc., 1972,
+        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. (1972)
+        "The Capital Asset Pricing Model: Some Empirical Tests"
+        STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc.
         Available at SSRN: https://ssrn.com/abstract=908569
+
+        Campbell, John Y., Andrew W. Lo, and Archie Craig MacKinlay (2012)
+        "The Econometrics of Financial Markets"
+        Princeton University Press
+        Section 6.2.1
     """
 
     def __init__(self, assets, factors):
@@ -44,7 +50,7 @@ class TimeseriesReg:
 
             r_it = alpha_i + beta_i * ft + eps_it
 
-        All factors f must be excess returns.
+        All test assets r and factors f must be excess returns.
 
         Parameters
         ----------
@@ -160,7 +166,7 @@ class TimeseriesReg:
         Plots the alphas and lambdas together with their confidence intervals,
         and compares the predicted average return with the realized average
         returns.
-        k
+
         Parameters
         ----------
         size: float
