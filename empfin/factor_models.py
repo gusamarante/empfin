@@ -246,6 +246,67 @@ class NonTradableFactors:
         #  Constrained Model  (Iterated MLE)
         #  Factor risk premia  (from the model parameters)
         #  "GRS" test  (CLM 6.2.42)
+        """
+        def estimate_unconstrained_model(assets, factors):
+
+            # 1. Align Data
+            # Ensure we only use dates present in both datasets
+            common_index = assets.index.intersection(factors.index)
+            Y = assets.loc[common_index]
+            X = factors.loc[common_index]
+
+            T = len(common_index)
+
+            # Convert to NumPy arrays for linear algebra efficiency
+            Y_vals = Y.values  # T x N
+            X_vals = X.values  # T x K
+
+            # 2. Compute Means (\hat{\mu} and \hat{\mu}_{f,K})
+            mu_Y = Y_vals.mean(axis=0) # Shape: (N,)
+            mu_X = X_vals.mean(axis=0) # Shape: (K,)
+
+            # 3. Center the Data
+            Y_c = Y_vals - mu_Y
+            X_c = X_vals - mu_X
+
+            # 4. Estimate B (Betas)
+            # Formula: B_hat = [Sum(R_c f_c')] [Sum(f_c f_c')]^-1
+            # Matrix form: B_hat = (Y_c.T @ X_c) @ (X_c.T @ X_c)^-1
+            # To avoid explicit inversion (slow/unstable), we solve the linear system:
+            # (X_c.T @ X_c) @ B_hat.T = (X_c.T @ Y_c)
+
+            XtX = X_c.T @ X_c  # K x K
+            XtY = X_c.T @ Y_c  # K x N
+
+            # Use linalg.solve to solve for B transposed
+            try:
+                B_hat_T = np.linalg.solve(XtX, XtY)
+            except np.linalg.LinAlgError:
+                # Fallback to pseudo-inverse if factors are collinear
+                B_hat_T = np.linalg.pinv(XtX) @ XtY
+
+            B_hat = B_hat_T.T  # N x K
+
+            # 5. Estimate a (Alphas)
+            # Formula: a_hat = mu_Y - B_hat @ mu_X
+            a_hat = mu_Y - B_hat @ mu_X  # Shape: (N,)
+
+            # 6. Estimate Sigma (Residual Covariance)
+            # Formula: Sum(epsilon @ epsilon') / T
+            # Residuals = Actual - (a + B @ f)
+            # Note: X_vals @ B_hat.T gives the factor component for all T
+            Y_pred = a_hat + X_vals @ B_hat.T
+            epsilon = Y_vals - Y_pred
+
+            Sigma_hat = (epsilon.T @ epsilon) / T  # N x N
+
+            # 7. Wrap results in Pandas containers
+            a_out = pd.Series(a_hat, index=Y.columns, name="Alpha")
+            B_out = pd.DataFrame(B_hat, index=Y.columns, columns=X.columns)
+            Sigma_out = pd.DataFrame(Sigma_hat, index=Y.columns, columns=Y.columns)
+
+            return a_out, B_out, Sigma_out
+        """
         pass
 
 
