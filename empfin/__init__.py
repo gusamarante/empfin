@@ -9,12 +9,18 @@ from empfin.data_readers import (
     cds_sov,
     vix,
 )
-from empfin.factor_models import RiskPremiaTermStructure, TimeseriesReg, CrossSectionReg
+from empfin.factor_models import (
+    CrossSectionReg,
+    NonTradableFactors,
+    RiskPremiaTermStructure,
+    TimeseriesReg,
+)
 
 __all__ = [
+    "CrossSectionReg",
+    "NonTradableFactors",
     "RiskPremiaTermStructure",
     "TimeseriesReg",
-    "CrossSectionReg",
     "bond_futures",
     "cds_sov",
     "ff25p",
