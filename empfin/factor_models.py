@@ -13,8 +13,10 @@ from scipy.stats import (
     norm,
 )
 from sklearn.decomposition import PCA
+from sklearn.exceptions import ConvergenceWarning
 import statsmodels.api as sm
 from tqdm import tqdm
+import warnings
 
 
 # TODO models to implement
@@ -239,10 +241,9 @@ class NonTradableFactors:
         Section 6.2.3
     """
 
-    def __init__(self, assets, factors):
+    def __init__(self, assets, factors, max_iter=1000, tol=1e-6):  # TODO change defaults
         # TODO Documentation (All factors are non-tradeable)
         # TODO Implement
-        #  Constrained Model  (Iterated MLE)
         #  Factor risk premia  (from the model parameters)
         #  "GRS" test  (CLM 6.2.42)
 
@@ -255,9 +256,10 @@ class NonTradableFactors:
         self.K = factors.shape[1]
         self.N = assets.shape[1]
 
-        self.B_unc, self.a_unc, self.Sigma_unc = self._estimate_unconditional(assets, factors)
+        self.B_unc, self.a_unc, self.Sigma_unc = self._estimate_unconstrained(assets, factors)
+        self.B_con, self.gamma0_con, self.gamma1_con, self.Sigma_con = self._estimate_constrained(assets, factors, max_iter, tol)
 
-    def _estimate_unconditional(self, assets, factors):
+    def _estimate_unconstrained(self, assets, factors):
         Y_vals = assets.values
         X_vals = factors.values
 
@@ -278,6 +280,68 @@ class NonTradableFactors:
 
         return B_hat, a_hat, Sigma_hat
 
+    def _estimate_constrained(self, assets, factors, max_iter, tol):
+        iota = np.ones((self.N, 1))
+
+        Y_vals = assets.values
+        X_vals = factors.values
+
+        mu_Y = Y_vals.mean(axis=0)
+        mu_X = X_vals.mean(axis=0)
+
+        # Initialized with unconstrained estimates
+        B = self.B_unc.copy()
+        Sigma = self.Sigma_unc.copy()
+
+        # Hold previous values for convergence check
+        prev_B = B.copy()
+        prev_Sigma = Sigma.copy()
+        prev_gamma = np.zeros(self.K + 1)
+
+        pbar = tqdm(range(max_iter), desc="Diff = 1")
+        for _ in pbar:
+
+            # Update Gamma
+            Sigma_inv = inv(Sigma)
+            X = np.hstack([iota, B])  # N x (K+1)
+            target = mu_Y - B @ mu_X  # (N,)
+            Xt_Sinv = X.T @ Sigma_inv
+            LHS = Xt_Sinv @ X
+            RHS = Xt_Sinv @ target
+            gamma = solve(LHS, RHS)  # (K+1,)
+            gamma_0 = gamma[0]
+            gamma_1 = gamma[1:]
+
+            # Update B
+            Y_adj = Y_vals - gamma_0  # T x N (Broadcasting scalar)
+            X_adj = X_vals + gamma_1  # T x K (Broadcasting vector)
+            Denom = X_adj.T @ X_adj
+            Num = Y_adj.T @ X_adj
+            B = solve(Denom, Num.T).T
+
+            # Update Sigma
+            resid = Y_vals - gamma_0 - X_adj @ B.T  # X_adj already contains gamma_1
+            Sigma = (resid.T @ resid) / self.T
+
+            # Check convergence
+            max_gamma = np.abs(gamma - prev_gamma).max()
+            max_B = np.abs(B - prev_B).max()
+            max_Sigma = np.abs(Sigma - prev_Sigma).max()
+            max_diff = max(max_gamma, max_B, max_Sigma)
+
+            pbar.set_description(f"Diff = {max_diff}")
+            if max_diff < tol:
+                break
+
+            # Hold values for next iteration
+            prev_gamma = gamma.copy()
+            prev_B = B.copy()
+            prev_Sigma = Sigma.copy()
+
+        else:
+            warnings.warn(f"Convergence not achieved after {max_iter} iterations", ConvergenceWarning)
+
+        return B, gamma_0, gamma_1, Sigma
 
 class CrossSectionReg:
     """
