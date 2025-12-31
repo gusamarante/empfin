@@ -7,8 +7,8 @@ Available models for estimation of risk premia:
 - `RiskPremiaTermStructure`: Estimation of the term structure of risk premia based on a single factor, tradeable or non-tradable. Model from Bryzgalova, Huang and Julliard (2024)
 
 # References
-Bryzgalova, Svetlana, Jiantao Huang, and Christian Julliard. 2024. [“Macro Strikes Back: Term Structure of Risk Premia and Market Segmentation.”](https://doi.org/10.2139/ssrn.4752696) Working Paper
+Bryzgalova, Svetlana, Jiantao Huang, and Christian Julliard (2024). [“_Macro Strikes Back: Term Structure of Risk Premia and Market Segmentation_”](https://doi.org/10.2139/ssrn.4752696) Working Paper
 
-Cochrane, John H. 2009. ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6). Princeton University Press.
+Cochrane, John H. (2009) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6). Princeton University Press.
 
-Campbell, Lo, and MacKinlay. 2012. _"The Econometrics of Financial Markets"_.
+Campbell, Lo, and MacKinlay (2012) ["_The Econometrics of Financial Markets_"](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019)
