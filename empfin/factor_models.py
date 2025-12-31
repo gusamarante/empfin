@@ -255,9 +255,19 @@ class NonTradableFactors:
         self.T = len(common_index)
         self.K = factors.shape[1]
         self.N = assets.shape[1]
+        self.Omega_hat = factors.cov()
+        self.mu_f = factors.mean()
 
         self.B_unc, self.a_unc, self.Sigma_unc = self._estimate_unconstrained(assets, factors)
         self.B_con, self.gamma0_con, self.gamma1_con, self.Sigma_con = self._estimate_constrained(assets, factors, max_iter, tol)
+
+        self.lambdas = pd.Series(
+            data=self.mu_f.values + self.gamma1_con,
+            index=factors.columns,
+            name="Lambdas",
+        )
+        # self.var_gamma0, self.var_gamma1 = self._compute_var_lambda  # TODO Parei aqui
+        # self.cov_lambdas = (1 / self.T) * self.Omega_hat # TODO + self.var_gamma1
 
     def _estimate_unconstrained(self, assets, factors):
         Y_vals = assets.values
