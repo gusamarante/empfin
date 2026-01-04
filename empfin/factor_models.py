@@ -244,7 +244,6 @@ class NonTradableFactors:
     def __init__(self, assets, factors, max_iter=1000, tol=1e-6):  # TODO change defaults
         # TODO Documentation (All factors are non-tradeable)
         # TODO Implement
-        #  Factor risk premia  (from the model parameters)
         #  "GRS" test  (CLM 6.2.42)
 
         # Align data
@@ -266,8 +265,8 @@ class NonTradableFactors:
             index=factors.columns,
             name="Lambdas",
         )
-        # self.var_gamma0, self.var_gamma1 = self._compute_var_lambda  # TODO Parei aqui
-        # self.cov_lambdas = (1 / self.T) * self.Omega_hat # TODO + self.var_gamma1
+        self.var_gamma0, self.var_gamma1 = self._compute_var_lambda()
+        self.cov_lambdas = (1 / self.T) * self.Omega_hat + self.var_gamma1
 
     def _estimate_unconstrained(self, assets, factors):
         Y_vals = assets.values
@@ -352,6 +351,21 @@ class NonTradableFactors:
             warnings.warn(f"Convergence not achieved after {max_iter} iterations", ConvergenceWarning)
 
         return B, gamma_0, gamma_1, Sigma
+
+    def _compute_var_lambda(self):
+        """
+        Equations 6.2.44 and 6.2.45 from Campbell, Lo & McKinley (2012)
+        """
+        sf = (1 / self.T) * (1 + self.lambdas.T @ inv(self.Omega_hat) @ self.lambdas)
+        iota = np.ones((self.N, 1))
+        A = iota.T @ inv(self.Sigma_con) @ iota
+        C = iota.T @ inv(self.Sigma_con) @ self.B_con
+        D = inv(self.B_con.T @ inv(self.Sigma_con) @ self.B_con)
+
+        var_g0 = sf * inv(A - C @ D @ C.T)
+        var_g1 = sf * D + var_g0 * D @ C.T @ C @ D
+
+        return var_g0, var_g1
 
 class CrossSectionReg:
     """
