@@ -2,9 +2,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
-from numpy.linalg import eigvals, inv, svd, solve
+from numpy.linalg import eigvals, inv, svd, solve, det
 from scipy.linalg import cholesky
 from scipy.stats import (
+    chi2,
     f,
     invgamma,
     invwishart,
@@ -243,8 +244,6 @@ class NonTradableFactors:
 
     def __init__(self, assets, factors, max_iter=1000, tol=1e-6):  # TODO change defaults
         # TODO Documentation (All factors are non-tradeable)
-        # TODO Implement
-        #  "GRS" test  (CLM 6.2.42)
 
         # Align data
         common_index = assets.index.intersection(factors.index)
@@ -267,6 +266,16 @@ class NonTradableFactors:
         )
         self.var_gamma0, self.var_gamma1 = self._compute_var_lambda()
         self.cov_lambdas = (1 / self.T) * self.Omega_hat + self.var_gamma1
+
+    def grs_test(self):
+        """
+        Null hypothesis, the constrained model is valid  # TODO right?
+        # TODO Better documentation
+        """
+        grs = - (self.T - 0.5 * self.N - self.K - 1) * (np.log(det(self.Sigma_unc)) - np.log(det(self.Sigma_con)))
+        dof = self.N - self.K - 1
+        pvalue = 1 - chi2.cdf(grs, dof)
+        return grs, pvalue
 
     def _estimate_unconstrained(self, assets, factors):
         Y_vals = assets.values
