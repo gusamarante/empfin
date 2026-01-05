@@ -21,12 +21,11 @@ import warnings
 
 
 # TODO models to implement
-#  Non-tradable factor (CLM)
 #  Cross-sectional regression
+#  Bayesian Fama-MacBeth
 #  Fama-Macbeth
 #  GMM
 #  GLS
-#  Move bayesfm here as well
 
 
 class TimeseriesReg:
@@ -232,6 +231,87 @@ class TimeseriesReg:
         plt.show()
         plt.close()
 
+class CrossSectionReg:
+    """
+    References:
+        Cochrane, John.
+        Asset Pricing: Revised Edition, 2009
+        Chapter 12.2
+    """
+
+    def __init__(self, assets, factors, cs_const=False):
+        """
+        First, estimates betas with a linear model using time series regressions
+
+            r_i = a_i + beta_i * f + eps_i  # TODO when can this be tradeable or not?
+
+        Then estimate factor risk premia from a regression across assets of
+        average returns on the betas
+
+            E(r_i) = (const + ) beta_i * lambda + alpha_i
+
+        Parameters
+        ----------
+        assets: pandas.DataFrame
+            timeseries of test assets returns
+
+        factors: pandas.DataFrame
+            timeseries of the factors
+
+        cs_const: bool
+            If True, adds a constant to the cross-sectional regression
+        """
+        self.avg_ret = assets.mean()
+
+        # First stage is the timeseries regression
+        ts_reg = TimeseriesReg(assets, factors)
+        self.T = ts_reg.T
+        self.N = ts_reg.N
+        self.K = ts_reg.K
+        self.betas = ts_reg.params.drop('alpha')
+        self.Sigma = ts_reg.Sigma  # Coavariance of all the residuals from all the 1st pass regressions
+        self.Omega = ts_reg.Omega  # Factor Covariance
+
+        # 2nd stage - cross sectional regression
+        if cs_const:
+            X = sm.add_constant(self.betas.T)
+        else:
+            X = self.betas.T
+
+        model = sm.OLS(self.avg_ret, X)
+        res = model.fit()
+        self.lambdas = res.params
+        self.alphas = res.resid
+
+        # Conventional OLS Estimator Covariance Matrix
+        # Equations 12.12 and 12.13 of Cochrane (2009)
+        b = self.betas.T.values
+        S = self.Sigma.values
+        O = self.Omega.values
+
+        # TODO we use no value from the 2nd stage pass to compute these SEs. Should we?
+        self.conv_cov_lambda_hat = pd.DataFrame(
+            data=(1 / self.T) * (inv(b.T @ b) @ b.T @ S @ b @ inv(b.T @ b) + O),
+            index=self.lambdas.index.drop('const', errors='ignore'),
+            columns=self.lambdas.index.drop('const', errors='ignore'),
+        )
+        self.conv_cov_alpha_hat = pd.DataFrame(
+            data=(1 / self.T) * ((np.eye(self.N) - b @ inv(b.T @ b) @ b.T) @ S @ (np.eye(self.N) - b @ inv(b.T @ b) @ b.T).T),
+            index=assets.columns,
+            columns=assets.columns,
+        )
+
+        # Shaken Correction for Covariance Matrices
+        # Equations 12.19 and 12.20 of Cochrane (2009)
+        lhat = self.lambdas.drop('const', errors='ignore').values
+        self.shanken_factor = 1 + lhat.T @ inv(O) @ lhat
+
+        self.shanken_cov_lambda_hat = pd.DataFrame(
+            data=(1 / self.T) * (self.shanken_factor * inv(b.T @ b) @ b.T @ S @ b @ inv(b.T @ b) + O),
+            index=self.lambdas.index.drop('const', errors='ignore'),
+            columns=self.lambdas.index.drop('const', errors='ignore'),
+        )
+        self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
 
 class NonTradableFactors:
     """
@@ -375,89 +455,6 @@ class NonTradableFactors:
         var_g1 = sf * D + var_g0 * D @ C.T @ C @ D
 
         return var_g0, var_g1
-
-class CrossSectionReg:
-    """
-    References:
-        Cochrane, John.
-        Asset Pricing: Revised Edition, 2009
-        Chapter 12.2
-    """
-
-    def __init__(self, assets, factors, cs_const=False):
-        """
-        First, estimates betas with a linear model using time series regressions
-
-            r_i = a_i + beta_i * f + eps_i  # TODO when can this be tradeable or not?
-
-        Then estimate factor risk premia from a regression across assets of
-        average returns on the betas
-
-            E(r_i) = (const + ) beta_i * lambda + alpha_i
-
-        Parameters
-        ----------
-        assets: pandas.DataFrame
-            timeseries of test assets returns
-
-        factors: pandas.DataFrame
-            timeseries of the factors
-
-        cs_const: bool
-            If True, adds a constant to the cross-sectional regression
-        """
-        self.avg_ret = assets.mean()
-
-        # First stage is the timeseries regression
-        ts_reg = TimeseriesReg(assets, factors)
-        self.T = ts_reg.T
-        self.N = ts_reg.N
-        self.K = ts_reg.K
-        self.betas = ts_reg.params.drop('alpha')
-        self.Sigma = ts_reg.Sigma  # Coavariance of all the residuals from all the 1st pass regressions
-        self.Omega = ts_reg.Omega  # Factor Covariance
-
-        # 2nd stage - cross sectional regression
-        if cs_const:
-            X = sm.add_constant(self.betas.T)
-        else:
-            X = self.betas.T
-
-        model = sm.OLS(self.avg_ret, X)
-        res = model.fit()
-        self.lambdas = res.params
-        self.alphas = res.resid
-
-        # Conventional OLS Estimator Covariance Matrix
-        # Equations 12.12 and 12.13 of Cochrane (2009)
-        b = self.betas.T.values
-        S = self.Sigma.values
-        O = self.Omega.values
-
-        # TODO we use no value from the 2nd stage pass to compute these SEs. Should we?
-        self.conv_cov_lambda_hat = pd.DataFrame(
-            data=(1 / self.T) * (inv(b.T @ b) @ b.T @ S @ b @ inv(b.T @ b) + O),
-            index=self.lambdas.index.drop('const', errors='ignore'),
-            columns=self.lambdas.index.drop('const', errors='ignore'),
-        )
-        self.conv_cov_alpha_hat = pd.DataFrame(
-            data=(1 / self.T) * ((np.eye(self.N) - b @ inv(b.T @ b) @ b.T) @ S @ (np.eye(self.N) - b @ inv(b.T @ b) @ b.T).T),
-            index=assets.columns,
-            columns=assets.columns,
-        )
-
-        # Shaken Correction for Covariance Matrices
-        # Equations 12.19 and 12.20 of Cochrane (2009)
-        lhat = self.lambdas.drop('const', errors='ignore').values
-        self.shanken_factor = 1 + lhat.T @ inv(O) @ lhat
-
-        self.shanken_cov_lambda_hat = pd.DataFrame(
-            data=(1 / self.T) * (self.shanken_factor * inv(b.T @ b) @ b.T @ S @ b @ inv(b.T @ b) + O),
-            index=self.lambdas.index.drop('const', errors='ignore'),
-            columns=self.lambdas.index.drop('const', errors='ignore'),
-        )
-        self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
-
 
 class RiskPremiaTermStructure:
     """
