@@ -1,5 +1,6 @@
 """
-Clean the replication data
+Clean the replication data "GDP_data.csv" into "GDP_data_clean.csv", which is
+more firendly for python applications
 """
 
 import pandas as pd
