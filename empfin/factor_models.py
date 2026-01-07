@@ -21,7 +21,7 @@ import warnings
 
 
 # TODO models to implement
-#  Bayesian Fama-MacBeth
+#  Bayesian Fama-MacBeth (move from bayesfm)
 #  Fama-Macbeth
 #  GMM
 #  GLS
@@ -30,14 +30,9 @@ import warnings
 class TimeseriesReg:
     """
     References:
-        Cochrane, John. (2009)
+        Cochrane, John. (2005)
         "Asset Pricing: Revised Edition"
         Section 12.1
-
-        Jensen, Michael C. and Black, Fischer and Scholes, Myron S. (1972)
-        "The Capital Asset Pricing Model: Some Empirical Tests"
-        STUDIES IN THE THEORY OF CAPITAL MARKETS, Praeger Publishers Inc.
-        Available at SSRN: https://ssrn.com/abstract=908569
 
         Campbell, John Y., Andrew W. Lo, and Archie Craig MacKinlay (2012)
         "The Econometrics of Financial Markets"
@@ -83,9 +78,18 @@ class TimeseriesReg:
         params: pandas.DataFrame
             Estimated regression coefficients
 
+        params_se: pandas.DataFrame
+            Standard error of the regression coefficients
+
+        tstats: pandas.DataFrame
+            t-statistic for the regression coefficients
+
+        pvalues: pandas.DataFrame
+            p-values for the regression coefficients
+
         cov_beta: dict
-            A dictionary with the assets as keys and their covariance matrix of
-            the OLS estimator as the values
+            A dictionary with the covariance matrix of the OLS estimator for
+            the regression of each asset
 
         resids: pandas.DataFrame
             Timeseries of the residuals for each of the rergessions
@@ -119,14 +123,15 @@ class TimeseriesReg:
         pvalues = []
         self.cov_beta = dict()
         for asst in assets.columns:
+            # TODO This loop could be a single OLS computation for stacked regressions
             model = sm.OLS(assets[asst], sm.add_constant(factors))
             res = model.fit()
 
             params.append(res.params.rename(asst))
             params_se.append(res.bse.rename(asst))
-            resids.append(res.resid.rename(asst))
             tstats.append(res.tvalues.rename(asst))
             pvalues.append(res.pvalues.rename(asst))
+            resids.append(res.resid.rename(asst))
 
             self.cov_beta[asst] = res.cov_params()
 
@@ -134,7 +139,6 @@ class TimeseriesReg:
         self.params_se = pd.concat(params_se, axis=1).rename({"const": "alpha"}, axis=0)
         self.tstats = pd.concat(tstats, axis=1).rename({"const": "alpha"}, axis=0)
         self.pvalues = pd.concat(pvalues, axis=1).rename({"const": "alpha"}, axis=0)
-
         self.resids = pd.concat(resids, axis=1)
         self.Sigma = self.resids.cov()
 
@@ -153,7 +157,7 @@ class TimeseriesReg:
 
         Notes
         -----
-        Equation 12.6 from Cochrane (2009)
+        Equation 12.6 from Cochrane (2005)
         """
         f1 = (self.T - self.N - self.K) / self.N
         f2 = 1 / (1 + self.lambdas.T @ inv(self.Omega) @ self.lambdas)
