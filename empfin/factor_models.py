@@ -241,9 +241,11 @@ class CrossSectionReg:
 
     def __init__(self, assets, factors, cs_const=False):
         """
+        This model can be used whether the factor are tradeable or not.
+
         First, estimates betas with a linear model using time series regressions
 
-            r_i = a_i + beta_i * f + eps_i  # TODO when can this be tradeable or not?
+            r_i = a_i + beta_i * f + eps_i
 
         Then estimate factor risk premia from a regression across assets of
         average returns on the betas
@@ -289,7 +291,6 @@ class CrossSectionReg:
         S = self.Sigma.values
         O = self.Omega.values
 
-        # TODO we use no value from the 2nd stage pass to compute these SEs. Should we?
         self.conv_cov_lambda_hat = pd.DataFrame(
             data=(1 / self.T) * (inv(b.T @ b) @ b.T @ S @ b @ inv(b.T @ b) + O),
             index=self.lambdas.index.drop('const', errors='ignore'),
@@ -312,6 +313,13 @@ class CrossSectionReg:
             columns=self.lambdas.index.drop('const', errors='ignore'),
         )
         self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
+
+    def grs_test(self):
+        # TODO Documentation
+        grs = self.alphas.T @ inv(self.shanken_cov_alpha_hat) @ self.alphas
+        dof = self.N - self.K
+        pvalue = 1 - chi2.cdf(grs, dof)
+        return grs, pvalue
 
 class NonTradableFactors:
     """
