@@ -8,36 +8,36 @@ facts, rf = ff5f()
 # ===========================================
 # ===== Single Factor Model with TS Reg =====
 # ===========================================
-# ts_reg_mkt = TimeseriesReg(
-#     assets=ports,
-#     factors=facts["Mkt-RF"],
-# )
-#
-# # --- GRS test ---
-# print(ts_reg_mkt.grs_test())
-# ts_reg_mkt.plot_alpha_pred(title="Timeseries Regression - Single Factor Model")
+ts_reg_mkt = TimeseriesReg(
+    assets=ports,
+    factors=facts["Mkt-RF"],
+)
+
+# --- GRS test ---
+print(ts_reg_mkt.grs_test())
+ts_reg_mkt.plot_alpha_pred(title="Timeseries Regression - Single Factor Model")
 
 
 # ======================================
 # ===== 5 Factor Model with TS Reg =====
 # ======================================
-# ts_reg_5f = TimeseriesReg(
-#     assets=ports,
-#     factors=facts,
-# )
-#
-# # --- GRS test ---
-# print(ts_reg_5f.grs_test())
-# ts_reg_5f.plot_alpha_pred(title="Timeseries Regression - 5 Factor Model")
+ts_reg_5f = TimeseriesReg(
+    assets=ports,
+    factors=facts,
+)
+
+# --- GRS test ---
+print(ts_reg_5f.grs_test())
+ts_reg_5f.plot_alpha_pred(title="Timeseries Regression - 5 Factor Model")
 
 
 # ===========================================
 # ===== Single Factor Model with CS Reg =====
 # ===========================================
-cs_reg_mkt_noconst = CrossSectionReg(
-    assets=ports,
-    factors=facts,
-    cs_const=False,
-)
+# cs_reg_mkt_noconst = CrossSectionReg(
+#     assets=ports,
+#     factors=facts,
+#     cs_const=False,
+# )
 
 # TODO Compare all the lambdas

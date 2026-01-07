@@ -21,7 +21,6 @@ import warnings
 
 
 # TODO models to implement
-#  Cross-sectional regression
 #  Bayesian Fama-MacBeth
 #  Fama-Macbeth
 #  GMM
