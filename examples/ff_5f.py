@@ -10,5 +10,9 @@ facts, rf = ff5f()
 cs_reg_mkt_noconst = CrossSectionReg(
     assets=ports,
     factors=facts,
-    cs_const=False,
+    # factors=facts["Mkt-RF"],
+    cs_const=True,
 )
+print(cs_reg_mkt_noconst.betas.T)
+print(cs_reg_mkt_noconst.lambdas)
+print(cs_reg_mkt_noconst.grs_test())
