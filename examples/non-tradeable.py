@@ -13,4 +13,4 @@ assets = (1 + assets/100).cumprod().resample("QE").last().pct_change(1).dropna()
 
 ntf = NonTradableFactors(assets, factors)
 
-print(ntf.grs_test())
+print(ntf.lr_test())
