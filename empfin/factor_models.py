@@ -24,8 +24,8 @@ from empfin.utils import nearest_psd
 
 
 # TODO models to implement
-#  Bayesian Fama-MacBeth (move from bayesfm)
 #  Fama-Macbeth
+#  Bayesian Fama-MacBeth (move from bayesfm)
 #  GMM
 #  GLS
 
@@ -126,7 +126,6 @@ class TimeseriesReg:
         pvalues = []
         self.cov_beta = dict()
         for asst in assets.columns:
-            # TODO This loop could be a single OLS computation for stacked regressions
             model = sm.OLS(assets[asst], sm.add_constant(factors))
             res = model.fit()
 
