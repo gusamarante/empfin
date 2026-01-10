@@ -240,7 +240,7 @@ class CrossSectionReg:
     """
     References:
         Cochrane, John.
-        Asset Pricing: Revised Edition, 2009
+        Asset Pricing: Revised Edition (2005)
         Chapter 12.2
     """
 
@@ -323,7 +323,22 @@ class CrossSectionReg:
         self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
 
     def grs_test(self):
-        # TODO Documentation
+        """
+        Runs the Gibbons-Ross-Shanken test to evaluate if all alphas are
+        jointly equal to zero.
+
+        Returns
+        -------
+        grs: float
+            Gibbons-Ross-Shanken test statistic
+
+        pvalue: float
+            p-value of the Gibbons-Ross-Shanken statistic
+
+        Notes
+        -----
+        Equation 12.14 from Cochrane (2005)
+        """
         grs = self.alphas.T @ inv(self.shanken_cov_alpha_hat) @ self.alphas
         dof = self.N - self.K
         pvalue = 1 - chi2.cdf(grs, dof)
@@ -332,8 +347,8 @@ class CrossSectionReg:
     def plot_alpha_pred(self, size=6, title=None):
         """
         Plots the alphas and lambdas together with their confidence intervals,
-        and compares the predicted average return with the realized average
-        returns.
+        and compares the average return predicted by the model with the
+        realized average returns.
 
         Parameters
         ----------
@@ -343,7 +358,6 @@ class CrossSectionReg:
         title: str, optional
             Title for the chart
         """
-        # TODO if the model has a constant in the second stage, it is used in the predicted average return.
         plt.figure(figsize=(size * (16 / 7.3), size))
         if title is not None:
             plt.suptitle(title)
