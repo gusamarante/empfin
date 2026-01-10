@@ -419,9 +419,37 @@ class NonTradableFactors:
         Section 6.2.3
     """
 
-    def __init__(self, assets, factors, max_iter=1000, tol=1e-6):  # TODO change defaults
-        # TODO Documentation (All factors are non-tradeable)
+    def __init__(self, assets, factors, max_iter=1000, tol=1e-8):
+        """
+        This model should be used when all factors are not tradable portfolios.
 
+        The unconstrained model is given by
+
+            r_t = a + B * f_{K,t} + eps_t
+
+        The constrained model imposes
+
+            a = \lambda0 \iota + B * (\lambda_K - \mu_{f,K})
+
+        which can then be estimated by iterative maximum likelihood. For
+        details, Campbell, Lo & MacKinlay (2012), equations (6.2.39)-(6.2.41)
+
+        Parameters
+        ----------
+        assets: pandas.DataFrame
+            timeseries of test assets returns
+
+        factors: pandas.DataFrame
+            timeseries of the factors
+
+        max_iter: int
+            maximum number of iterations allowed in the estimation of the
+            constrained model
+
+        tol: float
+            convergence criteria of iterative estimator of the constrained
+            model
+        """
         # Align data
         common_index = assets.index.intersection(factors.index)
         assets = assets.loc[common_index]
@@ -444,15 +472,18 @@ class NonTradableFactors:
         self.var_gamma0, self.var_gamma1 = self._compute_var_lambda()
         self.cov_lambdas = (1 / self.T) * self.Omega_hat + self.var_gamma1
 
-    def grs_test(self):
+    def lr_test(self):
         """
-        Null hypothesis, the constrained model is valid  # TODO right?
-        # TODO Better documentation
+        Likelihood ratio statistic to test the null hypothesis that the
+        constrained model is valid
+
+        For details, Campbell, Lo & MacKinlay (2012), equations (6.2.1)
+        and (6.2.42)
         """
-        grs = - (self.T - 0.5 * self.N - self.K - 1) * (np.log(det(self.Sigma_unc)) - np.log(det(self.Sigma_con)))
+        J = - (self.T - 0.5 * self.N - self.K - 1) * (np.log(det(self.Sigma_unc)) - np.log(det(self.Sigma_con)))
         dof = self.N - self.K - 1
-        pvalue = 1 - chi2.cdf(grs, dof)
-        return grs, pvalue
+        pvalue = 1 - chi2.cdf(J, dof)
+        return J, pvalue
 
     def _estimate_unconstrained(self, assets, factors):
         Y_vals = assets.values
