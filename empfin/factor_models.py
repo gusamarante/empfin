@@ -663,7 +663,6 @@ class RiskPremiaTermStructure:
         size: float
             Relative size of the chart. Aspect ratio is constant at 16 / 7.3
         """
-
         plt.figure(figsize=(size * (16 / 7.3), size))
         ax = plt.subplot2grid((1, 1), (0, 0))
         ax.plot(self.draws_lambda_g.median(), label="median", color="tab:blue")
@@ -729,14 +728,12 @@ class RiskPremiaTermStructure:
                 0.5 * (self.t - self.s_bar),
                 scale=(0.5 * (G - V_rho @ rho_g).T @ (G - V_rho @ rho_g))[0, 0],
             )
-            # TODO save this draw?
 
             # Draw of rho_g
             rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
             wg_hat = G - V_rho @ rho_g_hat
             Sigma_hat_rho = self._build_Sigma_hat(V_rho, self.t, self.s_bar, wg_hat)
             rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=Sigma_hat_rho)
-            # TODO save this draw?
 
             # Draw of eta_g
             V_eta = self._build_V_eta(self.t, self.s_bar, self.k, rho_g[1:], ups, mu_ups)
@@ -748,7 +745,6 @@ class RiskPremiaTermStructure:
                 cov=Sigma_hat_eta,
             ).reshape(-1, 1)
             eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
-            # TODO save this draw?
 
             # ----- STEP 2 -----
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
@@ -773,7 +769,6 @@ class RiskPremiaTermStructure:
                 rowcov=inv(A),
                 colcov=Sigma_wr,
             )
-            # TODO save draw?
 
             # ----- STEP 3 -----
             # Draw of \upsilon
@@ -783,7 +778,6 @@ class RiskPremiaTermStructure:
             L = cholesky(cov, lower=True)
             Z = norm.rvs(size=means.shape)
             ups = means + L @ Z
-            # TODO save draw?
 
             # Draw of \Sigma_{upsilon}
             ups_bar = ups.mean(axis=1).reshape(-1, 1)
@@ -791,13 +785,11 @@ class RiskPremiaTermStructure:
                 df=self.t - 1,
                 scale=ups @ ups.T - self.t * ups_bar @ ups_bar.T,
             )
-            # TODO save draw?
 
             mu_ups = multivariate_normal.rvs(
                 mean=ups_bar.reshape(-1),
                 cov=(1 / self.t) * Sigma_ups,
             ).reshape(-1, 1)
-            # TODO save draw?
 
             # ----- STEP 4 -----
             if self.k == 1:
