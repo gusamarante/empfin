@@ -1,3 +1,5 @@
+from idlelib.iomenu import errors
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -274,6 +276,7 @@ class CrossSectionReg:
         self.T = ts_reg.T
         self.N = ts_reg.N
         self.K = ts_reg.K
+        self.ret_mean = assets.mean()
         self.betas = ts_reg.params.drop('alpha')
         self.Sigma = ts_reg.Sigma  # Coavariance of all the residuals from all the 1st pass regressions
         self.Omega = ts_reg.Omega  # Factor Covariance
@@ -327,72 +330,72 @@ class CrossSectionReg:
         pvalue = 1 - chi2.cdf(grs, dof)
         return grs, pvalue
 
-    # def plot_alpha_pred(self, size=6, title=None):
-    #     """
-    #     Plots the alphas and lambdas together with their confidence intervals,
-    #     and compares the predicted average return with the realized average
-    #     returns.
-    #
-    #     Parameters
-    #     ----------
-    #     size: float
-    #         Relative size of the chart
-    #
-    #     title: str, optional
-    #         Title for the chart
-    #     """
-    #     plt.figure(figsize=(size * (16 / 7.3), size))
-    #     if title is not None:
-    #         plt.suptitle(title)
-    #
-    #     # Alphas and their CIs
-    #     ax = plt.subplot2grid((2, 2), (0, 0))
-    #     ax.set_title(r"$\alpha$ and CI")
-    #     ax = self.params.loc['alpha'].plot(kind='bar', ax=ax, width=0.9)
-    #     ax.axhline(0, color="black", lw=0.5)
-    #     ax.errorbar(
-    #         ax.get_xticks(),
-    #         self.params.loc['alpha'].values,
-    #         yerr=self.params_se.loc['alpha'].values * 1.96,
-    #         ls='none',
-    #         ecolor='tab:orange',
-    #     )
-    #     ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
-    #     ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
-    #
-    #     # lambdas and their CIs
-    #     ax = plt.subplot2grid((2, 2), (1, 0))
-    #     ax.set_title(r"$\lambda$ and CI")
-    #     ax = self.lambdas.plot(kind='bar', ax=ax, width=0.9)
-    #     ax.axhline(0, color="black", lw=0.5)
-    #     ax.errorbar(
-    #         ax.get_xticks(),
-    #         self.lambdas.values,
-    #         yerr=np.sqrt(np.diag(self.Omega.values) / self.T) * 1.96,
-    #         ls='none',
-    #         ecolor='tab:orange',
-    #     )
-    #     ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
-    #     ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
-    #
-    #     # Predicted VS actual average returns
-    #     ax = plt.subplot2grid((2, 2), (0, 1), rowspan=2)
-    #
-    #     predicted = self.params.drop('alpha').multiply(self.lambdas, axis=0).sum()
-    #
-    #     ax.scatter(predicted, self.ret_mean, label="Test Assets")
-    #     ax.axline((0, 0), (1, 1), color="tab:orange", ls="--", label="45 Degree Line")
-    #     ax.axhline(0, color="black", lw=0.5)
-    #     ax.axvline(0, color="black", lw=0.5)
-    #     ax.set_xlabel(r"Predicted Average Return $\beta_i^{\prime} \lambda$")
-    #     ax.set_ylabel(r"Realized Average Return $E(r_i)$")
-    #     ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
-    #     ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
-    #     ax.legend(frameon=True, loc="upper left")
-    #
-    #     plt.tight_layout()
-    #     plt.show()
-    #     plt.close()
+    def plot_alpha_pred(self, size=6, title=None):
+        """
+        Plots the alphas and lambdas together with their confidence intervals,
+        and compares the predicted average return with the realized average
+        returns.
+
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+        """
+        # TODO if the model has a constant in the second stage, it is used in the predicted average return.
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        if title is not None:
+            plt.suptitle(title)
+
+        # Alphas
+        ax = plt.subplot2grid((2, 2), (0, 0))
+        ax.set_title(r"$\alpha$ and their CI")
+        ax = self.alphas.plot(kind='bar', ax=ax, width=0.9)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            self.alphas.values,
+            yerr=np.sqrt(np.diag(self.shanken_cov_alpha_hat)) * 1.96,
+            ls='none',
+            ecolor='tab:orange',
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        # lambdas
+        lambdas = self.lambdas.drop("const", errors='ignore')
+        ax = plt.subplot2grid((2, 2), (1, 0))
+        ax.set_title(r"$\lambda$ and their CI")
+        ax = lambdas.plot(kind='bar', ax=ax, width=0.9)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            lambdas.values,
+            yerr=np.sqrt(np.diag(self.shanken_cov_lambda_hat)) * 1.96,
+            ls='none',
+            ecolor='tab:orange',
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        # Predicted VS actual average returns
+        ax = plt.subplot2grid((2, 2), (0, 1), rowspan=2)
+        predicted = self.lambdas.get('const', default=0) + self.betas.T @ lambdas
+        ax.scatter(predicted, self.ret_mean, label="Test Assets")
+        ax.axline((0, 0), (1, 1), color="tab:orange", ls="--", label="45 Degree Line")
+        ax.axhline(0, color="black", lw=0.5)
+        ax.axvline(0, color="black", lw=0.5)
+        ax.set_xlabel(r"Predicted Average Return $\beta_i^{\prime} \lambda$ (no $\alpha$)")
+        ax.set_ylabel(r"Realized Average Return $E(r_i)$")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="upper left")
+
+        plt.tight_layout()
+        plt.show()
+        plt.close()
 
 class NonTradableFactors:
     """
