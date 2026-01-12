@@ -6,7 +6,6 @@ from empfin.data_readers import (
     ust_futures,
     bond_futures,
     us_cpi,
-    cds_sov,
     vix,
     msb_replication,
 )
@@ -23,7 +22,6 @@ __all__ = [
     "RiskPremiaTermStructure",
     "TimeseriesReg",
     "bond_futures",
-    "cds_sov",
     "ff25p",
     "ff5f",
     "msb_replication",
