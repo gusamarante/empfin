@@ -3,6 +3,25 @@ from pathlib import Path
 
 GITHUB_DATA = Path("https://raw.githubusercontent.com/gusamarante/empfin/refs/heads/main/sample-data")
 
+def bond_futures():
+    """
+    Loads the bond futures excess return indexes from 24 developed countries
+    """
+    try:  # If repo is cloned, try to read locally for performance
+        bonds = pd.read_csv(
+            "../sample-data/Bond Futures.csv",
+            index_col="date",
+            sep=";",
+        )
+    except FileNotFoundError:  # If fails, when the package is installed, grab online
+        bonds = pd.read_csv(
+            GITHUB_DATA.joinpath("Bond Futures.csv"),
+            index_col="date",
+            sep=";",
+        )
+    bonds.index = pd.to_datetime(bonds.index)
+    return bonds
+
 def ff5f():
     """
     Loads the Fama-French 5 factors and the risk-free rate
@@ -59,45 +78,6 @@ def ff25p(sub_rf=True):
         ports = ports.sub(rf, axis=0).dropna(how="all")
 
     return ports
-
-def bond_futures():
-    """
-    Loads the bond futures excess return indexes from 24 developed countries
-    """
-    try:  # If repo is cloned, try to read locally for performance
-        bonds = pd.read_csv(
-            "../sample-data/Bond Futures.csv",
-            index_col="date",
-            sep=";",
-        )
-    except FileNotFoundError:  # If fails, when the package is installed, grab online
-        bonds = pd.read_csv(
-            GITHUB_DATA.joinpath("Bond Futures.csv"),
-            index_col="date",
-            sep=";",
-        )
-    bonds.index = pd.to_datetime(bonds.index)
-    return bonds
-
-def cds_sov():
-    """
-    Loads the Sovereign CDS excess return indexes
-    """
-    try:  # If repo is cloned, try to read locally for performance
-        cds = pd.read_csv(
-            "../sample-data/data_cds.csv",
-            index_col="date",
-            sep=";",
-        )
-    except FileNotFoundError:  # If fails, when the package is installed, grab online
-        cds = pd.read_csv(
-            GITHUB_DATA.joinpath("data_cds.csv"),
-            index_col="date",
-            sep=";",
-        )
-    cds.index = pd.to_datetime(cds.index)
-    cds.columns = cds.columns.str.replace("CDS ", "")
-    return cds
 
 def msb_replication():
     # TODO Documentation
