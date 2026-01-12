@@ -1,5 +1,5 @@
 # empfin - Empirical Finance Tools in Python
-`empfin` is a Python toolkit for common empirical asset pricing models and risk premia estimation.
+`empfin` is a Python toolkit for empirical asset pricing models and risk premia estimation. This library is in active development and aims to implment models from all corners of the literature.
 
 # What's Inside
 Currently available models for estimation of risk premia:
@@ -24,4 +24,4 @@ Cochrane (2009) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu
 Campbell, Lo, and MacKinlay (2012) ["_The Econometrics of Financial Markets_"](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019)
 
 # Library Citation
-> Gustavo Amarante (2026). empfin - Empirical Finance Tools in Python. Retrieved from https://github.com/gusamarante/pyacm
+> Gustavo Amarante (2026). empfin - Empirical Finance Tools in Python. Retrieved from https://github.com/gusamarante/empfin
