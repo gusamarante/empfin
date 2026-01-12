@@ -1,15 +1,27 @@
-# empfin
-_**UNDER CONSTRUCTUTION**_
+# empfin - Empirical Finance Tools in Python
+`empfin` is a Python toolkit for common empirical asset pricing models and risk premia estimation.
 
-Available models for estimation of risk premia:
-- `TimeseriesReg`: Timeseries regression. The single-pass OLS described in Section 12.1 of Cochrane (2005)
-- `CrossSectionReg`: Cross-Sectional regression. The two-pass OLS described in Section 12.2 of Cochrane (2005)
-- `NonTradableFactors`: A version of the timeseries regression, but adapted to only non-tradable factors. The iterative maximum likelihood estimator described in section 6.2.3 of Campbell, Lo and MacKinlay (2012)
-- `RiskPremiaTermStructure`: Estimation of the term structure of risk premia based on a single factor, tradeable or non-tradable. Model from Bryzgalova, Huang and Julliard (2024)
+# What's Inside
+Currently available models for estimation of risk premia:
+- `TimeseriesReg`: single-pass OLS time-series regression, described in [Cochrane (2005)](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6), Section 12.1
+- `CrossSectionReg`: two-pass cross-sectional regression, described in [Cochrane (2005)](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6), Section 12.2
+- `NonTradableFactors`: iterative maximum-likelihood estimator for non-tradable factors, described in [Campbell, Lo & MacKinlay (2012)](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019), Section 6.2.3 
+- `RiskPremiaTermStructure`: term structure of risk premia with a single factor, tradeable or not, following [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696). I would like to thank the authors for sharing their replication files.
+
+# Examples
+For each model, there is a jupyter notebook with [examples](https://github.com/gusamarante/empfin/tree/main/examples) of their use.
+
+# Installation
+```bash
+pip install empfin
+```
 
 # References
-Bryzgalova, Svetlana, Jiantao Huang, and Christian Julliard (2024) [“_Macro Strikes Back: Term Structure of Risk Premia and Market Segmentation_”](https://doi.org/10.2139/ssrn.4752696) Working Paper
+Bryzgalova, Huang, and Julliard (2024) [“_Macro Strikes Back: Term Structure of Risk Premia and Market Segmentation_”](https://doi.org/10.2139/ssrn.4752696) Working Paper
 
-Cochrane, John H. (2009) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6). Princeton University Press.
+Cochrane (2009) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6). Princeton University Press.
 
 Campbell, Lo, and MacKinlay (2012) ["_The Econometrics of Financial Markets_"](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019)
+
+# Library Citation
+> Gustavo Amarante (2026). empfin - Empirical Finance Tools in Python. Retrieved from https://github.com/gusamarante/pyacm
