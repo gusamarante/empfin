@@ -7,7 +7,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 with codecs.open(os.path.join(here, "README.md"), encoding="utf-8") as fh:
     long_description = "\n" + fh.read()
 
-VERSION = '0.1'
+VERSION = '1.0'
 DESCRIPTION = 'Empirical Finance Tools'
 
 # Setting up
@@ -16,20 +16,17 @@ setup(
     version=VERSION,
     author="Gustavo Amarante",
     maintainer="Gustavo Amarante",
-    maintainer_email="developer@dsgepy.com",  # TODO change this
+    maintainer_email="gustavoca2@insper.edu.br",
     description=DESCRIPTION,
     long_description_content_type="text/markdown",
     long_description=long_description,
     packages=find_packages(),
     install_requires=[
-        "bayesfm",
         "matplotlib",
         "numpy",
         "pandas",
-        "plottable",
         "scikit_learn",
         "scipy",
-        "setuptools",
         "statsmodels",
         "tqdm",
     ],
