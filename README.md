@@ -2,12 +2,13 @@
 _**UNDER CONSTRUCTUTION**_
 
 Available models for estimation of risk premia:
-- `TimeseriesReg`: Timeseries regression. The single-pass OLS described in Section 12.1 of Cochrane (2009)
-- `CrossSectionReg`: Cross-Sectional regression. The two-pass OLS described in Section 12.2 of Cochrane (2009)
+- `TimeseriesReg`: Timeseries regression. The single-pass OLS described in Section 12.1 of Cochrane (2005)
+- `CrossSectionReg`: Cross-Sectional regression. The two-pass OLS described in Section 12.2 of Cochrane (2005)
+- `NonTradableFactors`: A version of the timeseries regression, but adapted to only non-tradable factors. The iterative maximum likelihood estimator described in section 6.2.3 of Campbell, Lo and MacKinlay (2012)
 - `RiskPremiaTermStructure`: Estimation of the term structure of risk premia based on a single factor, tradeable or non-tradable. Model from Bryzgalova, Huang and Julliard (2024)
 
 # References
-Bryzgalova, Svetlana, Jiantao Huang, and Christian Julliard (2024). [“_Macro Strikes Back: Term Structure of Risk Premia and Market Segmentation_”](https://doi.org/10.2139/ssrn.4752696) Working Paper
+Bryzgalova, Svetlana, Jiantao Huang, and Christian Julliard (2024) [“_Macro Strikes Back: Term Structure of Risk Premia and Market Segmentation_”](https://doi.org/10.2139/ssrn.4752696) Working Paper
 
 Cochrane, John H. (2009) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6). Princeton University Press.
 
