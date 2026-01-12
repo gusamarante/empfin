@@ -8,6 +8,7 @@ from empfin.data_readers import (
     us_cpi,
     cds_sov,
     vix,
+    msb_replication,
 )
 from empfin.factor_models import (
     CrossSectionReg,
@@ -25,6 +26,7 @@ __all__ = [
     "cds_sov",
     "ff25p",
     "ff5f",
+    "msb_replication",
     "plot_correlogram",
     "us_cpi",
     "us_gdp",

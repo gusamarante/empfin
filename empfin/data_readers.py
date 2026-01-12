@@ -99,6 +99,12 @@ def cds_sov():
     cds.columns = cds.columns.str.replace("CDS ", "")
     return cds
 
+def msb_replication():
+    # TODO Documentation
+    data_df = pd.read_csv("../sample-data/GDP_data_clean.csv", index_col=0)
+    data_df.index = pd.to_datetime(data_df.index)
+    return data_df
+
 def ust_futures():
     """
     Loads the US bond futures excess return indexes for 6 different maturities
