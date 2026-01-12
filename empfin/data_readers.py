@@ -1,7 +1,7 @@
 import pandas as pd
 from urllib.parse import urljoin, quote
 
-GITHUB_DATA = "https://raw.githubusercontent.com/gusamarante/empfin/refs/heads/main/sample-data"
+GITHUB_DATA = "https://raw.githubusercontent.com/gusamarante/empfin/refs/heads/main/sample-data/"
 
 def bond_futures():
     """
