@@ -749,8 +749,8 @@ class RiskPremiaTermStructure:
             # ----- STEP 2 -----
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
 
-            # Draw of \Sigma_{wr}
-            # Sigma_wr = invwishart.rvs(  # TODO only for low dimension
+            # Draw of \Sigma_{wr} - only for low dimension
+            # Sigma_wr = invwishart.rvs(
             #     df=self.t,
             #     scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
             # )

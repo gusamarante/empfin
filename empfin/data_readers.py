@@ -5,7 +5,7 @@ GITHUB_DATA = Path("https://raw.githubusercontent.com/gusamarante/empfin/refs/he
 
 def bond_futures():
     """
-    Loads the bond futures excess return indexes from 24 developed countries
+    Loads the excess return index for bond futures of 24 developed countries
     """
     try:  # If repo is cloned, try to read locally for performance
         bonds = pd.read_csv(
@@ -80,8 +80,14 @@ def ff25p(sub_rf=True):
     return ports
 
 def msb_replication():
-    # TODO Documentation
-    data_df = pd.read_csv("../sample-data/GDP_data_clean.csv", index_col=0)
+    """
+    Loads the data to replicate a result from "Macro Strikes Back: Term Structure of Risk Premia"
+    """
+    try:  # If repo is cloned, try to read locally for performance
+        data_df = pd.read_csv("../sample-data/GDP_data_clean.csv", index_col=0)
+    except FileNotFoundError:  # If fails, when the package is installed, grab online
+        data_df = pd.read_csv(GITHUB_DATA.joinpath("GDP_data_clean.csv"), index_col=0)
+
     data_df.index = pd.to_datetime(data_df.index)
     return data_df
 
