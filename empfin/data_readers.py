@@ -1,7 +1,7 @@
 import pandas as pd
-from pathlib import Path
+from urllib.parse import urljoin, quote
 
-GITHUB_DATA = Path("https://raw.githubusercontent.com/gusamarante/empfin/refs/heads/main/sample-data")
+GITHUB_DATA = "https://raw.githubusercontent.com/gusamarante/empfin/refs/heads/main/sample-data"
 
 def bond_futures():
     """
@@ -15,7 +15,7 @@ def bond_futures():
         )
     except FileNotFoundError:  # If fails, when the package is installed, grab online
         bonds = pd.read_csv(
-            GITHUB_DATA.joinpath("Bond Futures.csv"),
+            urljoin(GITHUB_DATA, quote("Bond Futures.csv")),
             index_col="date",
             sep=";",
         )
@@ -33,7 +33,7 @@ def ff5f():
         )
     except FileNotFoundError:  # If fails, when the package is installed, grab online
         factors = pd.read_csv(
-            GITHUB_DATA.joinpath("F-F_Research_Data_5_Factors_2x3.csv"),
+            urljoin(GITHUB_DATA, quote("F-F_Research_Data_5_Factors_2x3.csv")),
             index_col="Date",
         )
 
@@ -58,7 +58,7 @@ def ff25p(sub_rf=True):
         )
     except FileNotFoundError:  # If fails, when the package is installed, grab online
         ports = pd.read_csv(
-            GITHUB_DATA.joinpath("25_Portfolios_5x5.csv"),
+            urljoin(GITHUB_DATA, quote("25_Portfolios_5x5.csv")),
             index_col="Date",
         )
     ports = ports.rename(
@@ -86,7 +86,10 @@ def msb_replication():
     try:  # If repo is cloned, try to read locally for performance
         data_df = pd.read_csv("../sample-data/GDP_data_clean.csv", index_col=0)
     except FileNotFoundError:  # If fails, when the package is installed, grab online
-        data_df = pd.read_csv(GITHUB_DATA.joinpath("GDP_data_clean.csv"), index_col=0)
+        data_df = pd.read_csv(
+            urljoin(GITHUB_DATA, quote("GDP_data_clean.csv")),
+            index_col=0,
+        )
 
     data_df.index = pd.to_datetime(data_df.index)
     return data_df
@@ -103,7 +106,7 @@ def ust_futures():
         )
     except FileNotFoundError:  # If fails, when the package is installed, grab online
         ust = pd.read_csv(
-            GITHUB_DATA.joinpath("UST Futures.csv"),
+            urljoin(GITHUB_DATA, quote("UST Futures.csv")),
             index_col="date",
             sep=";",
         )
@@ -121,7 +124,7 @@ def us_cpi():
         )
     except FileNotFoundError:  # If fails, when the package is installed, grab online
         cpi = pd.read_csv(
-            GITHUB_DATA.joinpath("CPI.csv"),
+            urljoin(GITHUB_DATA, quote("CPI.csv")),
             index_col="observation_date",
         )
     cpi.index = pd.to_datetime(cpi.index)
@@ -139,7 +142,7 @@ def us_gdp():
         )
     except FileNotFoundError:  # If fails, when the package is installed, grab online
         gdp = pd.read_csv(
-            GITHUB_DATA.joinpath("GDP.csv"),
+            urljoin(GITHUB_DATA, quote("GDP.csv")),
             index_col="observation_date",
         )
     gdp.index = pd.to_datetime(gdp.index)
@@ -154,7 +157,7 @@ def vix():
         )
     except FileNotFoundError:
         v = pd.read_excel(
-            GITHUB_DATA.joinpath("VIXCLS.xlsx"),
+            urljoin(GITHUB_DATA, quote("VIXCLS.xlsx")),
             index_col="observation_date",
         )
     v.index = pd.to_datetime(v.index)
