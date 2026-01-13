@@ -19,7 +19,7 @@ pip install empfin
 # References
 Bryzgalova, Huang, and Julliard (2024) [“_Macro Strikes Back: Term Structure of Risk Premia_”](https://doi.org/10.2139/ssrn.4752696) Working Paper
 
-Cochrane (2009) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6). Princeton University Press.
+Cochrane (2005) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6). Princeton University Press.
 
 Campbell, Lo, and MacKinlay (2012) ["_The Econometrics of Financial Markets_"](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019)
 
