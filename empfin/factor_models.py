@@ -1,5 +1,3 @@
-from idlelib.iomenu import errors
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -17,6 +15,8 @@ from scipy.stats import (
 )
 from sklearn.decomposition import PCA
 from sklearn.exceptions import ConvergenceWarning
+from itertools import product
+import seaborn as sns
 import statsmodels.api as sm
 from tqdm import tqdm
 import warnings
@@ -606,6 +606,7 @@ class RiskPremiaTermStructure:
             n_draws=1000,
             burnin=1000,
             k=None,
+            store_loadings=False,
     ):
         """
         Parameters
@@ -629,6 +630,10 @@ class RiskPremiaTermStructure:
         k: int
             Number of common factors in the model. If None, selects the number
             automatically based on information criteria
+
+        store_loadings: bool
+            If True, store the draws for beta_ups. Default is False, as it
+            consumes memory and slows down the process.
         """
         self._assertions(assets, factor)
 
@@ -639,6 +644,7 @@ class RiskPremiaTermStructure:
         self.s_bar = s_bar
         self.n_draws = n_draws
         self.burnin = burnin
+        self.store_loadings = store_loadings
 
         # select number of latent factors
         if k is None:
@@ -647,9 +653,16 @@ class RiskPremiaTermStructure:
             assert isinstance(k, int), "`k` must be an integer"
             self.k = k
 
-        self.draws_lambda_g = self._run_unconditional_gibbs()
+        self.draws_lambda_g, self.draws_loadings = self._run_unconditional_gibbs()
 
-    def plot_premia_term_structure(self, ci=0.9, size=5):
+    def plot_premia_term_structure(
+            self,
+            ci=0.9,
+            size=5,
+            title=r"$\lambda_{g}^{S}$",
+            x_axis_title=r"$S$",
+            save_path=None,
+    ):
         """
         Plots the unconditional risk premia term structure. The point estimate
         is the median of the posterior draws and the shaded area represents the
@@ -662,6 +675,16 @@ class RiskPremiaTermStructure:
 
         size: float
             Relative size of the chart. Aspect ratio is constant at 16 / 7.3
+
+        title: str
+            Title of the chart
+
+        x_axis_title: str
+            Title of the x axis
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         ax = plt.subplot2grid((1, 1), (0, 0))
@@ -676,12 +699,62 @@ class RiskPremiaTermStructure:
             lw=0,
         )
         ax.axhline(0, color='black', lw=0.5)
-        ax.set(title=r"$\lambda_{g}^{S}$", xlabel=r"$S$")
-        ax.xaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
-        ax.yaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
-        ax.legend(frameon=True, loc="upper left")
+        ax.set(
+            title=title,
+            xlabel=x_axis_title,
+        )
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="best")
 
         plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+
+    def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None):
+        """
+
+        Parameters
+        ----------
+        figsize: tuple
+            Overall size of the figure
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+        """
+        assert self.store_loadings, \
+            "Loadings heatmap can only be generated if `store_loadings` is True"
+
+        df = pd.DataFrame(
+            data=self.draws_loadings.median().values.reshape(self.n, self.k),
+            columns=[k + 1 for k in range(self.k)],
+            index=self.assets.columns,
+        )
+
+        plt.figure(figsize=figsize)
+        ax = plt.subplot2grid((1, 1), (0, 0))
+
+        ax = sns.heatmap(
+            data=df,
+            ax=ax,
+            cmap="RdBu_r",
+            center=0,
+            # cbar=None,
+            # linewidths=0.5,
+            # annot=True,
+            # linecolor="white",
+        )
+        ax.xaxis.set_label_position("top")
+        ax.xaxis.tick_top()
+        ax.set(
+            title="Medians of Factor Loadings",
+        )
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
         plt.show()
 
     def _run_unconditional_gibbs(self):
@@ -719,6 +792,11 @@ class RiskPremiaTermStructure:
 
         # Dataframe to save the draws
         draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
+        if self.store_loadings:
+            draws_loadings = pd.DataFrame(columns=[f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))])
+        else:
+            draws_loadings = None
+
         for dd in tqdm(range(self.n_draws + self.burnin)):
             # ----- STEP 1 -----
             V_rho = self._build_V_rho(ups, mu_ups, eta_g, self.s_bar, self.t)
@@ -773,6 +851,9 @@ class RiskPremiaTermStructure:
             # ----- STEP 3 -----
             # Draw of \upsilon
             beta_ups = B_r.T[:, 1:]
+            if self.store_loadings:
+                draws_loadings.loc[dd] = beta_ups.flatten()
+
             means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
             cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
             L = cholesky(cov, lower=True)
@@ -805,7 +886,7 @@ class RiskPremiaTermStructure:
             draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
 
         draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
-        return draws_lambda_g
+        return draws_lambda_g, draws_loadings
 
     @staticmethod
     def _build_V_eta(T, Sbar, K, rho, v, mu_v):
