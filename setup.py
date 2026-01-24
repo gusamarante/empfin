@@ -27,6 +27,8 @@ setup(
         "pandas",
         "scikit_learn",
         "scipy",
+        "seaborn",
+        "setuptools",
         "statsmodels",
         "tqdm",
     ],

@@ -16,6 +16,7 @@ from scipy.stats import (
 from sklearn.decomposition import PCA
 from sklearn.exceptions import ConvergenceWarning
 from itertools import product
+import seaborn as sns
 import statsmodels.api as sm
 from tqdm import tqdm
 import warnings
@@ -705,6 +706,51 @@ class RiskPremiaTermStructure:
         ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.legend(frameon=True, loc="best")
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+
+    def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None):
+        """
+
+        Parameters
+        ----------
+        figsize: tuple
+            Overall size of the figure
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+        """
+        assert self.store_loadings, \
+            "Loadings heatmap can only be generated if `store_loadings` is True"
+
+        df = pd.DataFrame(
+            data=self.draws_loadings.median().values.reshape(self.n, self.k),
+            columns=[k + 1 for k in range(self.k)],
+            index=self.assets.columns,
+        )
+
+        plt.figure(figsize=figsize)
+        ax = plt.subplot2grid((1, 1), (0, 0))
+
+        ax = sns.heatmap(
+            data=df,
+            ax=ax,
+            cmap="RdBu_r",
+            center=0,
+            # cbar=None,
+            # linewidths=0.5,
+            # annot=True,
+            # linecolor="white",
+        )
+        ax.xaxis.set_label_position("top")
+        ax.xaxis.tick_top()
+        ax.set(
+            title="Medians of Factor Loadings",
+        )
 
         plt.tight_layout()
         if save_path is not None:
