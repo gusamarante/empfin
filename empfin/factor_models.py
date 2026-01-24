@@ -651,7 +651,8 @@ class RiskPremiaTermStructure:
             self,
             ci=0.9,
             size=5,
-            x_axis_title=None,
+            title=r"$\lambda_{g}^{S}$",
+            x_axis_title=r"$S$",
             save_path=None,
     ):
         """
@@ -666,6 +667,9 @@ class RiskPremiaTermStructure:
 
         size: float
             Relative size of the chart. Aspect ratio is constant at 16 / 7.3
+
+        title: str
+            Title of the chart
 
         x_axis_title: str
             Title of the x axis
@@ -687,7 +691,10 @@ class RiskPremiaTermStructure:
             lw=0,
         )
         ax.axhline(0, color='black', lw=0.5)
-        ax.set(title=r"$\lambda_{g}^{S}$", xlabel=r"$S$")
+        ax.set(
+            title=title,
+            xlabel=x_axis_title,
+        )
         ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.legend(frameon=True, loc="best")
