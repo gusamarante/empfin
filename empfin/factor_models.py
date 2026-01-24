@@ -1,5 +1,3 @@
-from idlelib.iomenu import errors
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -649,7 +647,13 @@ class RiskPremiaTermStructure:
 
         self.draws_lambda_g = self._run_unconditional_gibbs()
 
-    def plot_premia_term_structure(self, ci=0.9, size=5):
+    def plot_premia_term_structure(
+            self,
+            ci=0.9,
+            size=5,
+            x_axis_title=None,
+            save_path=None,
+    ):
         """
         Plots the unconditional risk premia term structure. The point estimate
         is the median of the posterior draws and the shaded area represents the
@@ -662,6 +666,13 @@ class RiskPremiaTermStructure:
 
         size: float
             Relative size of the chart. Aspect ratio is constant at 16 / 7.3
+
+        x_axis_title: str
+            Title of the x axis
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         ax = plt.subplot2grid((1, 1), (0, 0))
@@ -677,11 +688,13 @@ class RiskPremiaTermStructure:
         )
         ax.axhline(0, color='black', lw=0.5)
         ax.set(title=r"$\lambda_{g}^{S}$", xlabel=r"$S$")
-        ax.xaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
-        ax.yaxis.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
-        ax.legend(frameon=True, loc="upper left")
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="best")
 
         plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
         plt.show()
 
     def _run_unconditional_gibbs(self):
