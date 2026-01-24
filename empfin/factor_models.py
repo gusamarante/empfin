@@ -886,6 +886,7 @@ class RiskPremiaTermStructure:
             draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
 
         draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
+        draws_loadings = draws_loadings.iloc[-self.n_draws:]
         return draws_lambda_g, draws_loadings
 
     @staticmethod
