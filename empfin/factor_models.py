@@ -169,7 +169,7 @@ class TimeseriesReg:
         pvalue = 1 - f.cdf(grs, dfn=self.N, dfd=self.T - self.N - self.K)
         return grs, pvalue
 
-    def plot_alpha_pred(self, size=6, title=None):
+    def plot_alpha_pred(self, size=6, title=None, save_path=None):
         """
         Plots the alphas and lambdas together with their confidence intervals,
         and compares the predicted average return with the realized average
@@ -182,6 +182,10 @@ class TimeseriesReg:
 
         title: str, optional
             Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         if title is not None:
@@ -233,6 +237,8 @@ class TimeseriesReg:
         ax.legend(frameon=True, loc="upper left")
 
         plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
         plt.show()
         plt.close()
 
@@ -344,7 +350,7 @@ class CrossSectionReg:
         pvalue = 1 - chi2.cdf(grs, dof)
         return grs, pvalue
 
-    def plot_alpha_pred(self, size=6, title=None):
+    def plot_alpha_pred(self, size=6, title=None, save_path=None):
         """
         Plots the alphas and lambdas together with their confidence intervals,
         and compares the average return predicted by the model with the
@@ -357,6 +363,10 @@ class CrossSectionReg:
 
         title: str, optional
             Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         if title is not None:
@@ -407,6 +417,8 @@ class CrossSectionReg:
         ax.legend(frameon=True, loc="upper left")
 
         plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
         plt.show()
         plt.close()
 
