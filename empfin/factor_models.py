@@ -169,7 +169,14 @@ class TimeseriesReg:
         pvalue = 1 - f.cdf(grs, dfn=self.N, dfd=self.T - self.N - self.K)
         return grs, pvalue
 
-    def plot_alpha_pred(self, size=6, title=None, save_path=None):
+    def plot_alpha_pred(
+            self,
+            size=6,
+            title=None,
+            save_path=None,
+            color1="tab:blue",
+            color2="tab:orange",
+    ):
         """
         Plots the alphas and lambdas together with their confidence intervals,
         and compares the predicted average return with the realized average
@@ -186,6 +193,12 @@ class TimeseriesReg:
         save_path: str, Path
             File path to save the picture. File type extension must be included
             (.png, .pdf, ...)
+
+        color1: str
+            Primary color of the chart
+
+        color2: str
+            Secondary color of the chart
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         if title is not None:
@@ -194,14 +207,14 @@ class TimeseriesReg:
         # Alphas and their CIs
         ax = plt.subplot2grid((2, 2), (0, 0))
         ax.set_title(r"$\alpha$ and CI")
-        ax = self.params.loc['alpha'].plot(kind='bar', ax=ax, width=0.9)
+        ax = self.params.loc['alpha'].plot(kind='bar', ax=ax, width=0.9, color=color1)
         ax.axhline(0, color="black", lw=0.5)
         ax.errorbar(
             ax.get_xticks(),
             self.params.loc['alpha'].values,
             yerr=self.params_se.loc['alpha'].values * 1.96,
             ls='none',
-            ecolor='tab:orange',
+            ecolor=color2,
         )
         ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
@@ -209,14 +222,14 @@ class TimeseriesReg:
         # lambdas and their CIs
         ax = plt.subplot2grid((2, 2), (1, 0))
         ax.set_title(r"$\lambda$ and CI")
-        ax = self.lambdas.plot(kind='bar', ax=ax, width=0.9)
+        ax = self.lambdas.plot(kind='bar', ax=ax, width=0.9, color=color1)
         ax.axhline(0, color="black", lw=0.5)
         ax.errorbar(
             ax.get_xticks(),
             self.lambdas.values,
             yerr=np.sqrt(np.diag(self.Omega.values) / self.T) * 1.96,
             ls='none',
-            ecolor='tab:orange',
+            ecolor=color2,
         )
         ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
@@ -226,8 +239,8 @@ class TimeseriesReg:
 
         predicted = self.params.drop('alpha').multiply(self.lambdas, axis=0).sum()
 
-        ax.scatter(predicted, self.ret_mean, label="Test Assets")
-        ax.axline((0, 0), (1, 1), color="tab:orange", ls="--", label="45 Degree Line")
+        ax.scatter(predicted, self.ret_mean, label="Test Assets", color=color1)
+        ax.axline((0, 0), (1, 1), color=color2, ls="--", label="45 Degree Line")
         ax.axhline(0, color="black", lw=0.5)
         ax.axvline(0, color="black", lw=0.5)
         ax.set_xlabel(r"Predicted Average Return $\beta_i^{\prime} \lambda$")
@@ -350,7 +363,14 @@ class CrossSectionReg:
         pvalue = 1 - chi2.cdf(grs, dof)
         return grs, pvalue
 
-    def plot_alpha_pred(self, size=6, title=None, save_path=None):
+    def plot_alpha_pred(
+            self,
+            size=6,
+            title=None,
+            save_path=None,
+            color1="tab:blue",
+            color2="tab:orange",
+    ):
         """
         Plots the alphas and lambdas together with their confidence intervals,
         and compares the average return predicted by the model with the
@@ -367,6 +387,12 @@ class CrossSectionReg:
         save_path: str, Path
             File path to save the picture. File type extension must be included
             (.png, .pdf, ...)
+
+        color1: str
+            Primary color of the chart
+
+        color2: str
+            Secondary color of the chart
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         if title is not None:
@@ -375,14 +401,14 @@ class CrossSectionReg:
         # Alphas
         ax = plt.subplot2grid((2, 2), (0, 0))
         ax.set_title(r"$\alpha$ and their CI")
-        ax = self.alphas.plot(kind='bar', ax=ax, width=0.9)
+        ax = self.alphas.plot(kind='bar', ax=ax, width=0.9, color=color1)
         ax.axhline(0, color="black", lw=0.5)
         ax.errorbar(
             ax.get_xticks(),
             self.alphas.values,
             yerr=np.sqrt(np.diag(self.shanken_cov_alpha_hat)) * 1.96,
             ls='none',
-            ecolor='tab:orange',
+            ecolor=color2,
         )
         ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
@@ -391,14 +417,14 @@ class CrossSectionReg:
         lambdas = self.lambdas.drop("const", errors='ignore')
         ax = plt.subplot2grid((2, 2), (1, 0))
         ax.set_title(r"$\lambda$ and their CI")
-        ax = lambdas.plot(kind='bar', ax=ax, width=0.9)
+        ax = lambdas.plot(kind='bar', ax=ax, width=0.9, color=color1)
         ax.axhline(0, color="black", lw=0.5)
         ax.errorbar(
             ax.get_xticks(),
             lambdas.values,
             yerr=np.sqrt(np.diag(self.shanken_cov_lambda_hat)) * 1.96,
             ls='none',
-            ecolor='tab:orange',
+            ecolor=color2,
         )
         ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
         ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
@@ -406,8 +432,8 @@ class CrossSectionReg:
         # Predicted VS actual average returns
         ax = plt.subplot2grid((2, 2), (0, 1), rowspan=2)
         predicted = self.lambdas.get('const', default=0) + self.betas.T @ lambdas
-        ax.scatter(predicted, self.ret_mean, label="Test Assets")
-        ax.axline((0, 0), (1, 1), color="tab:orange", ls="--", label="45 Degree Line")
+        ax.scatter(predicted, self.ret_mean, label="Test Assets", color=color1)
+        ax.axline((0, 0), (1, 1), color=color2, ls="--", label="45 Degree Line")
         ax.axhline(0, color="black", lw=0.5)
         ax.axvline(0, color="black", lw=0.5)
         ax.set_xlabel(r"Predicted Average Return $\beta_i^{\prime} \lambda$ (no $\alpha$)")
