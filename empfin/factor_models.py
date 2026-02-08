@@ -688,7 +688,33 @@ class RiskPremiaTermStructure:
             self.k = k
 
         self.draws_lambda_g, self.draws_loadings, self.draws_eta_g, self.draws_rho, self.draws_Sigma_ups, self.draws_Sigma_r = self._run_unconditional_gibbs()
-        self.w_mimicking_portfolio = self._compute_factor_mimicking_portfolio()
+
+    def factor_mimicking_portfolio(self, S):
+        # Reshape draws into 3D arrays for batched computation
+        beta_ups_all = self.draws_loadings.values.reshape(self.n_draws, self.n, self.k)
+        Sigma_ups_all = self.draws_Sigma_ups.values.reshape(self.n_draws, self.k, self.k)
+        Sigma_r_all = self.draws_Sigma_r.values.reshape(self.n_draws, self.n, self.n)
+        eta_g_all = self.draws_eta_g.values.reshape(self.n_draws, self.k, 1)
+
+        # Batched: beta_ups @ Sigma_ups @ eta_g for all draws → (n_draws, n, 1)
+        rhs = beta_ups_all @ Sigma_ups_all @ eta_g_all
+
+        # Batched solve: Sigma_r @ w = rhs for all draws → (n_draws, n, 1)
+        base_w = np.linalg.solve(Sigma_r_all, rhs)
+
+        # S-dependent scalar per draw: sum_{l=0}^{min(s_bar, S+1)} rho_l * (S+2-l) / (S+2)
+        upper = min(self.s_bar, S + 1)
+        l_vals = np.arange(upper + 1)
+        coeffs = S + 2 - l_vals
+        scalars = self.draws_rho.values[:, :upper + 1] @ coeffs / (S + 2)
+
+        # Scale base weights by the S-dependent scalar per draw
+        w = base_w.reshape(self.n_draws, self.n) * scalars[:, None]
+
+        return pd.DataFrame(
+            data=w,
+            columns=self.assets.columns,
+        )
 
     def plot_premia_term_structure(
             self,
@@ -939,10 +965,6 @@ class RiskPremiaTermStructure:
         Sigma_r_columns = [f"Sigma_r_{a}_{b}" for a, b in product(self.assets.columns, self.assets.columns)]
         draws_Sigma_r = pd.DataFrame(draws_Sigma_r_arr[-self.n_draws:], columns=Sigma_r_columns)
         return draws_lambda_g, draws_loadings, draws_eta_g, draws_rho, draws_Sigma_ups, draws_Sigma_r
-
-    def _compute_factor_mimicking_portfolio(self):
-        pass
-
 
     @staticmethod
     def _build_V_eta(T, Sbar, K, rho, v, mu_v):
