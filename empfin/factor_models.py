@@ -644,7 +644,6 @@ class RiskPremiaTermStructure:
             n_draws=1000,
             burnin=1000,
             k=None,
-            store_loadings=False,
     ):
         """
         Parameters
@@ -668,10 +667,6 @@ class RiskPremiaTermStructure:
         k: int
             Number of common factors in the model. If None, selects the number
             automatically based on information criteria
-
-        store_loadings: bool
-            If True, store the draws for beta_ups. Default is False, as it
-            consumes memory and slows down the process.
         """
         self._assertions(assets, factor)
 
@@ -682,7 +677,6 @@ class RiskPremiaTermStructure:
         self.s_bar = s_bar
         self.n_draws = n_draws
         self.burnin = burnin
-        self.store_loadings = store_loadings
 
         # select number of latent factors
         if k is None:
@@ -762,9 +756,6 @@ class RiskPremiaTermStructure:
             File path to save the picture. File type extension must be included
             (.png, .pdf, ...)
         """
-        assert self.store_loadings, \
-            "Loadings heatmap can only be generated if `store_loadings` is True"
-
         df = pd.DataFrame(
             data=self.draws_loadings.median().values.reshape(self.n, self.k),
             columns=[k + 1 for k in range(self.k)],
@@ -830,10 +821,7 @@ class RiskPremiaTermStructure:
 
         # Dataframe to save the draws
         draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
-        if self.store_loadings:
-            draws_loadings = pd.DataFrame(columns=[f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))])
-        else:
-            draws_loadings = None
+        draws_loadings = pd.DataFrame(columns=[f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))])
 
         for dd in tqdm(range(self.n_draws + self.burnin)):
             # ----- STEP 1 -----
@@ -889,8 +877,7 @@ class RiskPremiaTermStructure:
             # ----- STEP 3 -----
             # Draw of \upsilon
             beta_ups = B_r.T[:, 1:]
-            if self.store_loadings:
-                draws_loadings.loc[dd] = beta_ups.flatten()
+            draws_loadings.loc[dd] = beta_ups.flatten()
 
             means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
             cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
@@ -924,8 +911,7 @@ class RiskPremiaTermStructure:
             draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
 
         draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
-        if self.store_loadings:
-            draws_loadings = draws_loadings.iloc[-self.n_draws:]
+        draws_loadings = draws_loadings.iloc[-self.n_draws:]
         return draws_lambda_g, draws_loadings
 
     @staticmethod
