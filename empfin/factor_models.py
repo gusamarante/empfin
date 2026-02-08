@@ -467,7 +467,7 @@ class NonTradableFactors:
 
         The constrained model imposes
 
-            a = \lambda0 \iota + B * (\lambda_K - \mu_{f,K})
+            a = lambda0 iota + B * (lambda_K - mu_{f,K})
 
         which can then be estimated by iterative maximum likelihood. For
         details, Campbell, Lo & MacKinlay (2012), equations (6.2.39)-(6.2.41)
@@ -860,12 +860,11 @@ class RiskPremiaTermStructure:
             #     scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
             # )
 
-            Sigma_wr = np.diag(
-                invgamma.rvs(
-                    self.t - self.k - 1,
-                    scale=np.diag((1 / self.t) * (R - V_r @ B_r).T @ (R - V_r @ B_r)),
-                )
+            sigma_wr_diag = invgamma.rvs(
+                self.t - self.k - 1,
+                scale=np.diag((1 / self.t) * (R - V_r @ B_r).T @ (R - V_r @ B_r)),
             )
+            Sigma_wr = np.diag(sigma_wr_diag)
 
             # Draw of B_r
             A = V_r.T @ V_r + D_r
@@ -880,8 +879,13 @@ class RiskPremiaTermStructure:
             beta_ups = B_r.T[:, 1:]
             draws_loadings_arr[dd] = beta_ups.flatten()
 
-            means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
-            cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
+            # My previous attempt
+            # means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
+            # cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
+            # Exploit diagonal Sigma_wr: inv(Sigma_wr) @ X = X / sigma_wr_diag[:, None]
+            beta_scaled = beta_ups / sigma_wr_diag[:, None]
+            cov = inv(beta_scaled.T @ beta_ups)
+            means = cov @ (beta_scaled.T @ (R.T - mu_r + beta_ups @ mu_ups))
             L = cholesky(cov, lower=True)
             Z = norm.rvs(size=means.shape)
             ups = means + L @ Z
