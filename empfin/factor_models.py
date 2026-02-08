@@ -255,6 +255,7 @@ class TimeseriesReg:
         plt.show()
         plt.close()
 
+
 class CrossSectionReg:
     """
     References:
@@ -448,6 +449,7 @@ class CrossSectionReg:
         plt.show()
         plt.close()
 
+
 class NonTradableFactors:
     """
     References:
@@ -467,7 +469,7 @@ class NonTradableFactors:
 
         The constrained model imposes
 
-            a = \lambda0 \iota + B * (\lambda_K - \mu_{f,K})
+            a = lambda0 iota + B * (lambda_K - mu_{f,K})
 
         which can then be estimated by iterative maximum likelihood. For
         details, Campbell, Lo & MacKinlay (2012), equations (6.2.39)-(6.2.41)
@@ -644,7 +646,6 @@ class RiskPremiaTermStructure:
             n_draws=1000,
             burnin=1000,
             k=None,
-            store_loadings=False,
     ):
         """
         Parameters
@@ -668,10 +669,6 @@ class RiskPremiaTermStructure:
         k: int
             Number of common factors in the model. If None, selects the number
             automatically based on information criteria
-
-        store_loadings: bool
-            If True, store the draws for beta_ups. Default is False, as it
-            consumes memory and slows down the process.
         """
         self._assertions(assets, factor)
 
@@ -682,7 +679,6 @@ class RiskPremiaTermStructure:
         self.s_bar = s_bar
         self.n_draws = n_draws
         self.burnin = burnin
-        self.store_loadings = store_loadings
 
         # select number of latent factors
         if k is None:
@@ -691,7 +687,34 @@ class RiskPremiaTermStructure:
             assert isinstance(k, int), "`k` must be an integer"
             self.k = k
 
-        self.draws_lambda_g, self.draws_loadings = self._run_unconditional_gibbs()
+        self.draws_lambda_g, self.draws_loadings, self.draws_eta_g, self.draws_rho, self.draws_Sigma_ups, self.draws_Sigma_r = self._run_unconditional_gibbs()
+
+    def factor_mimicking_portfolio(self, S):
+        # Reshape draws into 3D arrays for batched computation
+        beta_ups_all = self.draws_loadings.values.reshape(self.n_draws, self.n, self.k)
+        Sigma_ups_all = self.draws_Sigma_ups.values.reshape(self.n_draws, self.k, self.k)
+        Sigma_r_all = self.draws_Sigma_r.values.reshape(self.n_draws, self.n, self.n)
+        eta_g_all = self.draws_eta_g.values.reshape(self.n_draws, self.k, 1)
+
+        # Batched: beta_ups @ Sigma_ups @ eta_g for all draws → (n_draws, n, 1)
+        rhs = beta_ups_all @ Sigma_ups_all @ eta_g_all
+
+        # Batched solve: Sigma_r @ w = rhs for all draws → (n_draws, n, 1)
+        base_w = np.linalg.solve(Sigma_r_all, rhs)
+
+        # S-dependent scalar per draw: sum_{l=0}^{min(s_bar, S+1)} rho_l * (S+2-l) / (S+2)
+        upper = min(self.s_bar, S + 1)
+        l_vals = np.arange(upper + 1)
+        coeffs = S + 2 - l_vals
+        scalars = self.draws_rho.values[:, :upper + 1] @ coeffs / (S + 2)
+
+        # Scale base weights by the S-dependent scalar per draw
+        w = base_w.reshape(self.n_draws, self.n) * scalars[:, None]
+
+        return pd.DataFrame(
+            data=w,
+            columns=self.assets.columns,
+        )
 
     def plot_premia_term_structure(
             self,
@@ -762,9 +785,6 @@ class RiskPremiaTermStructure:
             File path to save the picture. File type extension must be included
             (.png, .pdf, ...)
         """
-        assert self.store_loadings, \
-            "Loadings heatmap can only be generated if `store_loadings` is True"
-
         df = pd.DataFrame(
             data=self.draws_loadings.median().values.reshape(self.n, self.k),
             columns=[k + 1 for k in range(self.k)],
@@ -824,16 +844,18 @@ class RiskPremiaTermStructure:
         ups = V0.T  # latent factors
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
         rho_g = Vt[0, :].reshape(-1, 1) * s[0]
-        rho_g = np.insert(rho_g, 0, mu_g).reshape(-1,1)
+        rho_g = np.insert(rho_g, 0, mu_g).reshape(-1, 1)
         eta_g = U[:, [0]]
         B_r = np.zeros((self.k + 1, self.n))
 
-        # Dataframe to save the draws
-        draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
-        if self.store_loadings:
-            draws_loadings = pd.DataFrame(columns=[f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))])
-        else:
-            draws_loadings = None
+        # Pre-allocate numpy arrays to save the draws
+        total_draws = self.n_draws + self.burnin
+        draws_lambda_g_arr = np.empty((total_draws, self.s_bar + 1))
+        draws_loadings_arr = np.empty((total_draws, self.n * self.k))
+        draws_eta_g_arr = np.empty((total_draws, self.k))
+        draws_rho_arr = np.empty((total_draws, self.s_bar + 1))
+        draws_Sigma_ups_arr = np.empty((total_draws, self.k * self.k))
+        draws_Sigma_r_arr = np.empty((total_draws, self.n * self.n))
 
         for dd in tqdm(range(self.n_draws + self.burnin)):
             # ----- STEP 1 -----
@@ -861,6 +883,7 @@ class RiskPremiaTermStructure:
                 cov=Sigma_hat_eta,
             ).reshape(-1, 1)
             eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
+            draws_eta_g_arr[dd] = eta_g.flatten()
 
             # ----- STEP 2 -----
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
@@ -871,12 +894,11 @@ class RiskPremiaTermStructure:
             #     scale=(R - V_r @ B_r).T @ (R - V_r @ B_r),
             # )
 
-            Sigma_wr = np.diag(
-                invgamma.rvs(
-                    self.t - self.k - 1,
-                    scale=np.diag((1 / self.t) * (R - V_r @ B_r).T @ (R - V_r @ B_r)),
-                )
+            sigma_wr_diag = invgamma.rvs(
+                self.t - self.k - 1,
+                scale=np.diag((1 / self.t) * (R - V_r @ B_r).T @ (R - V_r @ B_r)),
             )
+            Sigma_wr = np.diag(sigma_wr_diag)
 
             # Draw of B_r
             A = V_r.T @ V_r + D_r
@@ -889,11 +911,15 @@ class RiskPremiaTermStructure:
             # ----- STEP 3 -----
             # Draw of \upsilon
             beta_ups = B_r.T[:, 1:]
-            if self.store_loadings:
-                draws_loadings.loc[dd] = beta_ups.flatten()
+            draws_loadings_arr[dd] = beta_ups.flatten()
 
-            means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
-            cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
+            # My previous attempt
+            # means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
+            # cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
+            # Exploit diagonal Sigma_wr: inv(Sigma_wr) @ X = X / sigma_wr_diag[:, None]
+            beta_scaled = beta_ups / sigma_wr_diag[:, None]
+            cov = inv(beta_scaled.T @ beta_ups)
+            means = cov @ (beta_scaled.T @ (R.T - mu_r + beta_ups @ mu_ups))
             L = cholesky(cov, lower=True)
             Z = norm.rvs(size=means.shape)
             ups = means + L @ Z
@@ -920,13 +946,25 @@ class RiskPremiaTermStructure:
 
             rho = rho_g[1:]
 
-            # save the draws of lambda_g_s
-            draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
+            draws_rho_arr[dd] = rho.flatten()
+            draws_Sigma_ups_arr[dd] = Sigma_ups.flatten()
+            draws_Sigma_r_arr[dd] = Sigma_r.flatten()
 
-        draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
-        if self.store_loadings:
-            draws_loadings = draws_loadings.iloc[-self.n_draws:]
-        return draws_lambda_g, draws_loadings
+            # save the draws of lambda_g_s
+            rho_cumsum = np.cumsum(rho.flatten())
+            draws_lambda_g_arr[dd] = (eta_g.T @ lambda_ups)[0, 0] * np.cumsum(rho_cumsum) / np.arange(1, self.s_bar + 2)
+
+        # Convert to DataFrames after the loop, keeping only post-burnin draws
+        loadings_columns = [f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))]
+        draws_lambda_g = pd.DataFrame(draws_lambda_g_arr[-self.n_draws:], columns=range(self.s_bar + 1))
+        draws_loadings = pd.DataFrame(draws_loadings_arr[-self.n_draws:], columns=loadings_columns)
+        draws_eta_g = pd.DataFrame(draws_eta_g_arr[-self.n_draws:], columns=[f"eta_g_{v + 1}" for v in range(self.k)])
+        draws_rho = pd.DataFrame(draws_rho_arr[-self.n_draws:], columns=[f"rho_{l}" for l in range(self.s_bar + 1)])
+        Sigma_ups_columns = [f"Sigma_ups_{i + 1}_{j + 1}" for i, j in product(range(self.k), range(self.k))]
+        draws_Sigma_ups = pd.DataFrame(draws_Sigma_ups_arr[-self.n_draws:], columns=Sigma_ups_columns)
+        Sigma_r_columns = [f"Sigma_r_{a}_{b}" for a, b in product(self.assets.columns, self.assets.columns)]
+        draws_Sigma_r = pd.DataFrame(draws_Sigma_r_arr[-self.n_draws:], columns=Sigma_r_columns)
+        return draws_lambda_g, draws_loadings, draws_eta_g, draws_rho, draws_Sigma_ups, draws_Sigma_r
 
     @staticmethod
     def _build_V_eta(T, Sbar, K, rho, v, mu_v):
@@ -974,10 +1012,10 @@ class RiskPremiaTermStructure:
         retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
         eigv = np.sort(eigvals(retp_ret))[::-1]
         gamma_hat = np.median(eigv[:self.k_max])
-        phi_nt = 0.5 * gamma_hat * np.log(self.t * self.n) * (self.t**(-0.5) + self.n**(-0.5))
+        phi_nt = 0.5 * gamma_hat * np.log(self.t * self.n) * (self.t ** (-0.5) + self.n ** (-0.5))
         j = (np.arange(len(eigv)) + 1)
         grid = (eigv / (self.t * self.n)) + j * phi_nt
-        k_hat  = np.argmin(grid) + 1
+        k_hat = np.argmin(grid) + 1
         print("selected number of factors is", k_hat)
         return k_hat
 
