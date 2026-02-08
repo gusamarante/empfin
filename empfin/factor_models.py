@@ -909,7 +909,8 @@ class RiskPremiaTermStructure:
             rho = rho_g[1:]
 
             # save the draws of lambda_g_s
-            draws_lambda_g_arr[dd] = (eta_g.T @ lambda_ups)[0, 0] * np.array([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
+            rho_cumsum = np.cumsum(rho.flatten())
+            draws_lambda_g_arr[dd] = (eta_g.T @ lambda_ups)[0, 0] * np.cumsum(rho_cumsum) / np.arange(1, self.s_bar + 2)
 
         # Convert to DataFrames after the loop, keeping only post-burnin draws
         loadings_columns = [f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))]
