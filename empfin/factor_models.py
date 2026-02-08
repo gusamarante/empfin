@@ -255,6 +255,7 @@ class TimeseriesReg:
         plt.show()
         plt.close()
 
+
 class CrossSectionReg:
     """
     References:
@@ -447,6 +448,7 @@ class CrossSectionReg:
             plt.savefig(save_path)
         plt.show()
         plt.close()
+
 
 class NonTradableFactors:
     """
@@ -685,7 +687,8 @@ class RiskPremiaTermStructure:
             assert isinstance(k, int), "`k` must be an integer"
             self.k = k
 
-        self.draws_lambda_g, self.draws_loadings = self._run_unconditional_gibbs()
+        self.draws_lambda_g, self.draws_loadings, self.draws_eta_g, self.draws_rho, self.draws_Sigma_ups, self.draws_Sigma_r = self._run_unconditional_gibbs()
+        self.w_mimicking_portfolio = self._compute_factor_mimicking_portfolio()
 
     def plot_premia_term_structure(
             self,
@@ -815,7 +818,7 @@ class RiskPremiaTermStructure:
         ups = V0.T  # latent factors
         mu_ups = ups.mean(axis=1).reshape(self.k, -1)
         rho_g = Vt[0, :].reshape(-1, 1) * s[0]
-        rho_g = np.insert(rho_g, 0, mu_g).reshape(-1,1)
+        rho_g = np.insert(rho_g, 0, mu_g).reshape(-1, 1)
         eta_g = U[:, [0]]
         B_r = np.zeros((self.k + 1, self.n))
 
@@ -823,6 +826,10 @@ class RiskPremiaTermStructure:
         total_draws = self.n_draws + self.burnin
         draws_lambda_g_arr = np.empty((total_draws, self.s_bar + 1))
         draws_loadings_arr = np.empty((total_draws, self.n * self.k))
+        draws_eta_g_arr = np.empty((total_draws, self.k))
+        draws_rho_arr = np.empty((total_draws, self.s_bar + 1))
+        draws_Sigma_ups_arr = np.empty((total_draws, self.k * self.k))
+        draws_Sigma_r_arr = np.empty((total_draws, self.n * self.n))
 
         for dd in tqdm(range(self.n_draws + self.burnin)):
             # ----- STEP 1 -----
@@ -850,6 +857,7 @@ class RiskPremiaTermStructure:
                 cov=Sigma_hat_eta,
             ).reshape(-1, 1)
             eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
+            draws_eta_g_arr[dd] = eta_g.flatten()
 
             # ----- STEP 2 -----
             V_r = np.column_stack([np.ones(self.t), (ups.T - mu_ups.T)])
@@ -912,6 +920,10 @@ class RiskPremiaTermStructure:
 
             rho = rho_g[1:]
 
+            draws_rho_arr[dd] = rho.flatten()
+            draws_Sigma_ups_arr[dd] = Sigma_ups.flatten()
+            draws_Sigma_r_arr[dd] = Sigma_r.flatten()
+
             # save the draws of lambda_g_s
             rho_cumsum = np.cumsum(rho.flatten())
             draws_lambda_g_arr[dd] = (eta_g.T @ lambda_ups)[0, 0] * np.cumsum(rho_cumsum) / np.arange(1, self.s_bar + 2)
@@ -920,7 +932,17 @@ class RiskPremiaTermStructure:
         loadings_columns = [f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))]
         draws_lambda_g = pd.DataFrame(draws_lambda_g_arr[-self.n_draws:], columns=range(self.s_bar + 1))
         draws_loadings = pd.DataFrame(draws_loadings_arr[-self.n_draws:], columns=loadings_columns)
-        return draws_lambda_g, draws_loadings
+        draws_eta_g = pd.DataFrame(draws_eta_g_arr[-self.n_draws:], columns=[f"eta_g_{v + 1}" for v in range(self.k)])
+        draws_rho = pd.DataFrame(draws_rho_arr[-self.n_draws:], columns=[f"rho_{l}" for l in range(self.s_bar + 1)])
+        Sigma_ups_columns = [f"Sigma_ups_{i + 1}_{j + 1}" for i, j in product(range(self.k), range(self.k))]
+        draws_Sigma_ups = pd.DataFrame(draws_Sigma_ups_arr[-self.n_draws:], columns=Sigma_ups_columns)
+        Sigma_r_columns = [f"Sigma_r_{a}_{b}" for a, b in product(self.assets.columns, self.assets.columns)]
+        draws_Sigma_r = pd.DataFrame(draws_Sigma_r_arr[-self.n_draws:], columns=Sigma_r_columns)
+        return draws_lambda_g, draws_loadings, draws_eta_g, draws_rho, draws_Sigma_ups, draws_Sigma_r
+
+    def _compute_factor_mimicking_portfolio(self):
+        pass
+
 
     @staticmethod
     def _build_V_eta(T, Sbar, K, rho, v, mu_v):
@@ -968,10 +990,10 @@ class RiskPremiaTermStructure:
         retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
         eigv = np.sort(eigvals(retp_ret))[::-1]
         gamma_hat = np.median(eigv[:self.k_max])
-        phi_nt = 0.5 * gamma_hat * np.log(self.t * self.n) * (self.t**(-0.5) + self.n**(-0.5))
+        phi_nt = 0.5 * gamma_hat * np.log(self.t * self.n) * (self.t ** (-0.5) + self.n ** (-0.5))
         j = (np.arange(len(eigv)) + 1)
         grid = (eigv / (self.t * self.n)) + j * phi_nt
-        k_hat  = np.argmin(grid) + 1
+        k_hat = np.argmin(grid) + 1
         print("selected number of factors is", k_hat)
         return k_hat
 
