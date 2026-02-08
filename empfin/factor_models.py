@@ -819,9 +819,10 @@ class RiskPremiaTermStructure:
         eta_g = U[:, [0]]
         B_r = np.zeros((self.k + 1, self.n))
 
-        # Dataframe to save the draws
-        draws_lambda_g = pd.DataFrame(columns=range(self.s_bar + 1))
-        draws_loadings = pd.DataFrame(columns=[f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))])
+        # Pre-allocate numpy arrays to save the draws
+        total_draws = self.n_draws + self.burnin
+        draws_lambda_g_arr = np.empty((total_draws, self.s_bar + 1))
+        draws_loadings_arr = np.empty((total_draws, self.n * self.k))
 
         for dd in tqdm(range(self.n_draws + self.burnin)):
             # ----- STEP 1 -----
@@ -877,7 +878,7 @@ class RiskPremiaTermStructure:
             # ----- STEP 3 -----
             # Draw of \upsilon
             beta_ups = B_r.T[:, 1:]
-            draws_loadings.loc[dd] = beta_ups.flatten()
+            draws_loadings_arr[dd] = beta_ups.flatten()
 
             means = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups) @ (beta_ups.T @ inv(Sigma_wr) @ (R.T - mu_r + beta_ups @ mu_ups))
             cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
@@ -908,10 +909,12 @@ class RiskPremiaTermStructure:
             rho = rho_g[1:]
 
             # save the draws of lambda_g_s
-            draws_lambda_g.loc[dd] = (eta_g.T @ lambda_ups)[0, 0] * pd.Series([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
+            draws_lambda_g_arr[dd] = (eta_g.T @ lambda_ups)[0, 0] * np.array([np.mean(np.cumsum(rho[:S + 1])) for S in range(self.s_bar + 1)])
 
-        draws_lambda_g = draws_lambda_g.iloc[-self.n_draws:]
-        draws_loadings = draws_loadings.iloc[-self.n_draws:]
+        # Convert to DataFrames after the loop, keeping only post-burnin draws
+        loadings_columns = [f"{a} - loading {v + 1}" for a, v in product(self.assets.columns, range(self.k))]
+        draws_lambda_g = pd.DataFrame(draws_lambda_g_arr[-self.n_draws:], columns=range(self.s_bar + 1))
+        draws_loadings = pd.DataFrame(draws_loadings_arr[-self.n_draws:], columns=loadings_columns)
         return draws_lambda_g, draws_loadings
 
     @staticmethod
