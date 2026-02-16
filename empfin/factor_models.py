@@ -723,7 +723,7 @@ class RiskPremiaTermStructure:
             title=r"$\lambda_{g}^{S}$",
             x_axis_title=r"$S$",
             save_path=None,
-            show_chart=False,
+            show_chart=True,
     ):
         """
         Plots the unconditional risk premia term structure. The point estimate
@@ -782,7 +782,7 @@ class RiskPremiaTermStructure:
 
         plt.close()
 
-    def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None, show_chart=False):
+    def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None, show_chart=True):
         """
 
         Parameters
