@@ -723,6 +723,7 @@ class RiskPremiaTermStructure:
             title=r"$\lambda_{g}^{S}$",
             x_axis_title=r"$S$",
             save_path=None,
+            show_chart=False,
     ):
         """
         Plots the unconditional risk premia term structure. The point estimate
@@ -746,6 +747,10 @@ class RiskPremiaTermStructure:
         save_path: str, Path
             File path to save the picture. File type extension must be included
             (.png, .pdf, ...)
+
+        show_chart: bool
+            If True, shows the chart. If False, it still saves the chart to
+            `save_path`.
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         ax = plt.subplot2grid((1, 1), (0, 0))
@@ -771,9 +776,13 @@ class RiskPremiaTermStructure:
         plt.tight_layout()
         if save_path is not None:
             plt.savefig(save_path)
-        plt.show()
 
-    def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None):
+        if show_chart:
+            plt.show()
+
+        plt.close()
+
+    def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None, show_chart=False):
         """
 
         Parameters
@@ -784,6 +793,10 @@ class RiskPremiaTermStructure:
         save_path: str, Path
             File path to save the picture. File type extension must be included
             (.png, .pdf, ...)
+
+        show_chart: bool
+            If True, shows the chart. If False, it still saves the chart to
+            `save_path`.
         """
         df = pd.DataFrame(
             data=self.draws_loadings.median().values.reshape(self.n, self.k),
@@ -813,7 +826,11 @@ class RiskPremiaTermStructure:
         plt.tight_layout()
         if save_path is not None:
             plt.savefig(save_path)
-        plt.show()
+
+        if show_chart:
+            plt.show()
+
+        plt.close()
 
     def _run_unconditional_gibbs(self):
 
