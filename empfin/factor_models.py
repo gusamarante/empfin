@@ -897,7 +897,7 @@ class RiskPremiaTermStructure:
             Sigma_hat_eta = self._build_Sigma_hat(V_eta, self.t, self.s_bar, weta_hat)
             eta_g = multivariate_normal.rvs(
                 mean=eta_g_hat.reshape(-1),
-                cov=Sigma_hat_eta,
+                cov=nearest_psd(Sigma_hat_eta),
             ).reshape(-1, 1)
             eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)  # Normalize
             draws_eta_g_arr[dd] = eta_g.flatten()
@@ -921,8 +921,8 @@ class RiskPremiaTermStructure:
             A = V_r.T @ V_r + D_r
             B_r = matrix_normal.rvs(
                 mean=np.linalg.solve(A, V_r.T @ R),  # Efficient computation
-                rowcov=inv(A),
-                colcov=Sigma_wr,
+                rowcov=nearest_psd(inv(A)),
+                colcov=nearest_psd(Sigma_wr),
             )
 
             # ----- STEP 3 -----
@@ -935,7 +935,7 @@ class RiskPremiaTermStructure:
             # cov = inv(beta_ups.T @ inv(Sigma_wr) @ beta_ups)
             # Exploit diagonal Sigma_wr: inv(Sigma_wr) @ X = X / sigma_wr_diag[:, None]
             beta_scaled = beta_ups / sigma_wr_diag[:, None]
-            cov = inv(beta_scaled.T @ beta_ups)
+            cov = nearest_psd(inv(beta_scaled.T @ beta_ups))
             means = cov @ (beta_scaled.T @ (R.T - mu_r + beta_ups @ mu_ups))
             L = cholesky(cov, lower=True)
             Z = norm.rvs(size=means.shape)
