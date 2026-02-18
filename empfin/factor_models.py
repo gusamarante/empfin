@@ -945,12 +945,12 @@ class RiskPremiaTermStructure:
             ups_bar = ups.mean(axis=1).reshape(-1, 1)
             Sigma_ups = invwishart.rvs(
                 df=self.t - 1,
-                scale=ups @ ups.T - self.t * ups_bar @ ups_bar.T,
+                scale=nearest_psd(ups @ ups.T - self.t * ups_bar @ ups_bar.T),
             )
 
             mu_ups = multivariate_normal.rvs(
                 mean=ups_bar.reshape(-1),
-                cov=(1 / self.t) * Sigma_ups,
+                cov=nearest_psd((1 / self.t) * Sigma_ups),
             ).reshape(-1, 1)
 
             # ----- STEP 4 -----
