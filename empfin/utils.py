@@ -5,7 +5,8 @@ from numpy.linalg import eigh
 def nearest_psd(C):
     C = (C + C.T) / 2
     w, v = eigh(C)
-    w[w < 0] = 0
+    eps = 1e-12 * max(np.abs(w).max(), 1.0)
+    w[w < eps] = eps
     C_psd = (v * w) @ v.T  # same as v @ np.diag(w) @ v.T but faster
     C_psd = (C_psd + C_psd.T) / 2
 
