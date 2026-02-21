@@ -1027,12 +1027,13 @@ class RiskPremiaTermStructure:
 
     def _get_number_latent_factors(self):
         retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
-        eigv = np.sort(eigvals(retp_ret))[::-1]
-        gamma_hat = np.median(eigv[:self.k_max])
+        eigv = np.sort(eigvals(retp_ret).real)[::-1]
+        eigv_normalized = eigv / (self.t * self.n)
+        gamma_hat = np.median(eigv_normalized[:self.k_max])
         phi_nt = 0.5 * gamma_hat * np.log(self.t * self.n) * (self.t ** (-0.5) + self.n ** (-0.5))
-        j = (np.arange(len(eigv)) + 1)
-        grid = (eigv / (self.t * self.n)) + j * phi_nt
-        k_hat = np.argmin(grid) + 1
+        j = np.arange(1, self.k_max + 1)
+        grid = eigv_normalized[:self.k_max] + j * phi_nt
+        k_hat = max(1, np.argmin(grid))
         print("selected number of factors is", k_hat)
         return k_hat
 
