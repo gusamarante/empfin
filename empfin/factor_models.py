@@ -300,7 +300,7 @@ class CrossSectionReg:
         self.Sigma = ts_reg.Sigma  # Coavariance of all the residuals from all the 1st pass regressions
         self.Omega = ts_reg.Omega  # Factor Covariance
 
-        # 2nd stage - cross sectional regression
+        # 2nd stage - cross-sectional regression
         if cs_const:
             X = sm.add_constant(self.betas.T)
         else:
@@ -742,7 +742,7 @@ class RiskPremiaTermStructure:
             Title of the chart
 
         x_axis_title: str
-            Title of the x axis
+            Title of the x-axis
 
         save_path: str, Path
             File path to save the picture. File type extension must be included
