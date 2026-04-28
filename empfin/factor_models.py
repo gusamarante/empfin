@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 from numpy.linalg import eigvals, inv, svd, solve, det
-from scipy.linalg import cholesky
+from scipy.linalg import cholesky, solve_discrete_lyapunov
 from scipy.stats import (
     chi2,
     f,
@@ -28,6 +28,64 @@ from empfin.utils import nearest_psd
 #  Bayesian Fama-MacBeth (move from bayesfm)
 #  GMM
 #  GLS
+
+
+def _build_V_rho(centered, eta_g, sbar, t):
+    """
+    Builds the regressor matrix for sampling `rho_g` in the time-series
+    equation for the macro factor. `centered` is the centered/innovation
+    tensor of latent factors with shape (K, T): `(v_t - mu_v)` for the
+    unconditional model and the VAR innovations `eps_vt` for the conditional
+    model.
+    """
+    elements = centered.T.dot(eta_g)
+    W = sliding_window_view(elements.reshape(-1), sbar + 1)
+    W = W[:, ::-1]
+    V_rho = np.concatenate([np.ones((t - sbar, 1)), W], axis=1)
+    return V_rho
+
+
+def _build_V_eta(T, Sbar, K, rho, centered):
+    """
+    Builds the regressor matrix for sampling `eta_g`. `centered` has shape
+    (K, T) and follows the same convention as in `_build_V_rho`.
+    """
+    V_eta = np.empty((T - Sbar, K))
+    for t in range(T - Sbar):
+        V_eta[t, :] = np.sum(
+            rho[:, None] * centered[:, Sbar + t - np.arange(Sbar + 1)].T,
+            axis=0,
+        )
+    return V_eta
+
+
+def _build_Sigma_hat(V, T, Sbar, w_hat):
+    """
+    Newey-West sandwich estimator for the posterior covariance of `rho_g` and
+    `eta_g`, accounting for autocorrelation in the residuals up to lag `Sbar`.
+    """
+    sum1 = sum(
+        (w_hat[it, 0] ** 2) * V[[it], :].T @ V[[it], :]
+        for it in range(w_hat.shape[0])
+    )
+    sum2 = sum(
+        _build_Gamma_hat_rho_l(T, Sbar, w_hat, V, l) * (1 - (l / (1 + Sbar)))
+        for l in range(1, Sbar + 1)
+    )
+    S_hat_rho = (1 / (T - Sbar)) * sum1 + sum2
+    Sigma_hat_rho = inv(V.T @ V) @ ((T - Sbar) * S_hat_rho) @ inv(V.T @ V)
+    return Sigma_hat_rho
+
+
+def _build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l):
+    Gamma = np.zeros((V_rho.shape[1], V_rho.shape[1]))
+    for it in range(l, T - Sbar):
+        scalar = wg_hat[it, 0] * wg_hat[it - l, 0]
+        mat1 = V_rho[[it], :].T @ V_rho[[it - l], :]
+        mat2 = V_rho[[it - l], :].T @ V_rho[[it], :]
+        Gamma += scalar * (mat1 + mat2)
+    Gamma = Gamma * (1 / (T - Sbar - l))
+    return Gamma
 
 
 class TimeseriesReg:
@@ -876,7 +934,7 @@ class RiskPremiaTermStructure:
 
         for dd in tqdm(range(self.n_draws + self.burnin)):
             # ----- STEP 1 -----
-            V_rho = self._build_V_rho(ups, mu_ups, eta_g, self.s_bar, self.t)
+            V_rho = _build_V_rho(ups - mu_ups, eta_g, self.s_bar, self.t)
 
             # Draw of \sigma^2_{wg}
             s2_wg = invgamma.rvs(
@@ -887,14 +945,14 @@ class RiskPremiaTermStructure:
             # Draw of rho_g
             rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G  # arg1
             wg_hat = G - V_rho @ rho_g_hat
-            Sigma_hat_rho = self._build_Sigma_hat(V_rho, self.t, self.s_bar, wg_hat)
+            Sigma_hat_rho = _build_Sigma_hat(V_rho, self.t, self.s_bar, wg_hat)
             rho_g = multivariate_normal.rvs(mean=rho_g_hat.reshape(-1), cov=Sigma_hat_rho)
 
             # Draw of eta_g
-            V_eta = self._build_V_eta(self.t, self.s_bar, self.k, rho_g[1:], ups, mu_ups)
+            V_eta = _build_V_eta(self.t, self.s_bar, self.k, rho_g[1:], ups - mu_ups)
             eta_g_hat = inv(V_eta.T @ V_eta) @ V_eta.T @ G_bar  # arg1
             weta_hat = G_bar - V_eta @ eta_g_hat
-            Sigma_hat_eta = self._build_Sigma_hat(V_eta, self.t, self.s_bar, weta_hat)
+            Sigma_hat_eta = _build_Sigma_hat(V_eta, self.t, self.s_bar, weta_hat)
             eta_g = multivariate_normal.rvs(
                 mean=eta_g_hat.reshape(-1),
                 cov=nearest_psd(Sigma_hat_eta),
@@ -983,48 +1041,6 @@ class RiskPremiaTermStructure:
         draws_Sigma_r = pd.DataFrame(draws_Sigma_r_arr[-self.n_draws:], columns=Sigma_r_columns)
         return draws_lambda_g, draws_loadings, draws_eta_g, draws_rho, draws_Sigma_ups, draws_Sigma_r
 
-    @staticmethod
-    def _build_V_eta(T, Sbar, K, rho, v, mu_v):
-        v_c = v - mu_v
-        V_eta = np.empty((T - Sbar, K))
-        for t in range(T - Sbar):
-            V_eta[t, :] = np.sum(rho[:, None] * v_c[:, Sbar + t - np.arange(Sbar + 1)].T, axis=0)
-
-        return V_eta
-
-    def _build_Sigma_hat(self, V, T, Sbar, w_hat):
-        sum1 = sum(
-            (w_hat[it, 0] ** 2) * V[[it], :].T @ V[[it], :]
-            for it in range(w_hat.shape[0])
-        )
-        sum2 = sum(
-            self._build_Gamma_hat_rho_l(T, Sbar, w_hat, V, l) * (1 - (l / (1 + Sbar)))
-            for l in range(1, Sbar + 1)
-        )
-        S_hat_rho = (1 / (T - Sbar)) * sum1 + sum2
-
-        Sigma_hat_rho = inv(V.T @ V) @ ((T - Sbar) * S_hat_rho) @ inv(V.T @ V)
-        return Sigma_hat_rho
-
-    @staticmethod
-    def _build_V_rho(ups, mu_ups, eta_g, sbar, t):
-        elements = (ups - mu_ups).T.dot(eta_g)
-        W = sliding_window_view(elements.reshape(-1), sbar + 1)
-        W = W[:, ::-1]  # Reverse column order
-        V_rho = np.concatenate([np.ones((t - sbar, 1)), W], axis=1)
-        return V_rho
-
-    @staticmethod
-    def _build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l):
-        Gamma = np.zeros((V_rho.shape[1], V_rho.shape[1]))
-        for it in range(l, T - Sbar):
-            scalar = wg_hat[it, 0] * wg_hat[it - l, 0]
-            mat1 = V_rho[[it], :].T @ V_rho[[it - l], :]
-            mat2 = V_rho[[it - l], :].T @ V_rho[[it], :]
-            Gamma += scalar * (mat1 + mat2)
-        Gamma = Gamma * (1 / (T - Sbar - l))
-        return Gamma
-
     def _get_number_latent_factors(self):
         retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
         eigv = np.sort(eigvals(retp_ret).real)[::-1]
@@ -1041,3 +1057,721 @@ class RiskPremiaTermStructure:
     def _assertions(assets, factor):
         assert factor.index.equals(assets.index), \
             "the index for `factor` and `assets` must match"
+
+
+class ConditionalRiskPremiaTermStructure:
+    """
+    This class implements the conditional (time-varying) version of the model
+    presented in
+
+        Bryzgalova, Svetlana and Huang, Jiantao and Julliard, Christian,
+        Macro Strikes Back: Term Structure of Risk Premia (March 8, 2024).
+        Available at SSRN: https://ssrn.com/abstract=4752696
+
+    The conditional model adds a VAR(q) layer on the latent factors (optionally
+    augmented with external predictors), letting the conditional mean of the
+    latent factors vary over time. As a result, the term structure of risk
+    premia becomes time-varying.
+    """
+    k_max = 15
+
+    def __init__(
+            self,
+            assets,
+            factor,
+            s_bar,
+            n_draws=1000,
+            burnin=1000,
+            k=None,
+            predictors=None,
+            q=1,
+    ):
+        """
+        Parameters
+        ----------
+        assets: pandas.DataFrame
+            Timeseries of asset returns.
+
+        factor: pandas.Series
+            Macro factor for which to identify the term structure of risk
+            premia. Can be a tradable or non-tradable factor.
+
+        s_bar: int
+            Number of lags used in the MA representation of the factor.
+
+        n_draws: int
+            Number of post-burnin Gibbs draws.
+
+        burnin: int
+            Number of initial draws to discard.
+
+        k: int, optional
+            Number of latent factors. If None, selected automatically using an
+            information criterion.
+
+        predictors: pandas.DataFrame, optional
+            External predictors `z_t` to include in the VAR alongside the
+            latent factors. Must share the index of `assets`. If None, the
+            VAR is fitted on the latent factors only.
+
+        q: int
+            VAR order (lags). Default 1, matching the paper's empirical
+            specification.
+        """
+        self._assertions(assets, factor, predictors)
+
+        self.assets = assets
+        self.macro_factor = factor
+        self.predictors = predictors
+        self.q = q
+        self.t, self.n = assets.shape
+        self.s_bar = s_bar
+        self.n_draws = n_draws
+        self.burnin = burnin
+
+        if k is None:
+            self.k = self._get_number_latent_factors()
+        else:
+            assert isinstance(k, int), "`k` must be an integer"
+            self.k = k
+
+        self.p = 0 if predictors is None else predictors.shape[1]
+        self.k_p = self.k + self.p
+
+        # Conditioning dates: VAR forecasts are valid for t-1 >= q (1-indexed),
+        # i.e., 0-indexed conditioning index q-1..T-2 -> T-q values.
+        self.t_eff = self.t - self.q
+        self.lambda_g_dates = self.assets.index[self.q - 1 : self.t - 1]
+
+        (
+            self.draws_lambda_g,
+            self.draws_loadings,
+            self.draws_eta_g,
+            self.draws_rho,
+            self.draws_Sigma_eps_v,
+            self.draws_Sigma_r,
+            self.draws_Phi,
+            self.draws_Sigma_eps_x,
+        ) = self._run_conditional_gibbs()
+
+    def factor_mimicking_portfolio(self, S):
+        r"""
+        Horizon-specific factor-mimicking portfolio for the conditional
+        model (Proposition 2 of Amarante and Soares "Macro Takes Time").
+
+        The mimicking portfolio is the linear projection of the cumulative
+        macro factor on the cumulative asset returns,
+
+            w^S_MP = Var(r_{t-1->t+S})^{-1} Cov(r_{t-1->t+S}, g_{t-1->t+S})
+
+        which under the model's distributional assumptions evaluates to
+
+            w^S_MP = [β_v Ω(S) β_v' + (S+2) Σ_wr]^{-1}
+                     β_v [Ξ(S) I_K + Θ(S)] η_g
+
+        where Ω(S) is the cumulative latent-factor covariance over the
+        holding window and Θ(S) captures the contribution from the
+        predictable component of returns being correlated with past
+        macroeconomic innovations. The portfolio depends on horizon `S`
+        but not on the realised state of the economy.
+
+        Parameters
+        ----------
+        S: int
+            Holding-period horizon. Must lie in `[0, s_bar]`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Posterior draws of the mimicking-portfolio weights, shape
+            `n_draws x N` (one row per Gibbs draw, one column per asset).
+            Rows whose VAR draw is non-stationary are filled with NaN.
+        """
+        if not (0 <= S <= self.s_bar):
+            raise ValueError(f"`S` must lie in [0, {self.s_bar}]")
+
+        K = self.k
+        Kp = self.k_p
+        q = self.q
+        s_bar = self.s_bar
+        n_draws = self.n_draws
+        N = self.n
+        comp_size = q * Kp
+
+        # Selectors used in Lemmas 1 and 2: J picks the first non-stacked
+        # block from the companion-stacked vector; E picks the first K
+        # latent-factor coordinates from the (latent + predictor) vector.
+        J_sel = np.zeros((Kp, comp_size))
+        J_sel[:, :Kp] = np.eye(Kp)
+        E_sel = np.zeros((K, Kp))
+        E_sel[:, :K] = np.eye(K)
+        EJ = E_sel @ J_sel
+
+        beta_v_all = self.draws_loadings.values.reshape(n_draws, N, K)
+        eta_g_all = self.draws_eta_g.values.reshape(n_draws, K, 1)
+        rho_all = self.draws_rho.values  # (n_draws, s_bar+1) -> rho_0..rho_{s_bar}
+        Sigma_eps_v_all = self.draws_Sigma_eps_v.values.reshape(n_draws, K, K)
+        Sigma_r_all = self.draws_Sigma_r.values.reshape(n_draws, N, N)
+        Phi_all = self.draws_Phi.values.reshape(n_draws, 1 + q * Kp, Kp)
+        Sigma_eps_x_all = self.draws_Sigma_eps_x.values.reshape(n_draws, Kp, Kp)
+
+        # Ξ(S) — scalar, depends only on rho.
+        upper = min(s_bar, S + 1)
+        coeffs_xi = (S + 2 - np.arange(upper + 1)).astype(float)
+        Xi_all = rho_all[:, : upper + 1] @ coeffs_xi  # (n_draws,)
+
+        I_K = np.eye(K)
+        I_comp = np.eye(comp_size)
+        w_out = np.empty((n_draws, N))
+
+        for dd in range(n_draws):
+            beta_v = beta_v_all[dd]
+            eta_g = eta_g_all[dd]
+            rho = rho_all[dd]
+            Sigma_eps_x = Sigma_eps_x_all[dd]
+            Phi = Phi_all[dd]
+            Sigma_eps_v = Sigma_eps_v_all[dd]
+            Sigma_r = Sigma_r_all[dd]
+
+            # Σ_wr is diagonal; recover it from the stored Σ_r = β_v Σ_{ε_v} β_v' + Σ_wr.
+            Sigma_wr = np.diag(np.diag(Sigma_r - beta_v @ Sigma_eps_v @ beta_v.T))
+
+            # VAR companion matrix.
+            A_comp = np.zeros((comp_size, comp_size))
+            for lag in range(1, q + 1):
+                phi_l = Phi[1 + (lag - 1) * Kp : 1 + lag * Kp, :].T
+                A_comp[:Kp, (lag - 1) * Kp : lag * Kp] = phi_l
+            if q > 1:
+                A_comp[Kp:, : (q - 1) * Kp] = np.eye(comp_size - Kp)
+
+            # Stationarity is required for Γ_xx(0) to exist; otherwise mark NaN.
+            if np.max(np.abs(eigvals(A_comp))) >= 1.0:
+                w_out[dd] = np.nan
+                continue
+
+            # Γ_xx(0) from the discrete Lyapunov equation in Lemma 2.
+            Q_lyap = J_sel.T @ Sigma_eps_x @ J_sel
+            try:
+                Gamma_xx_0 = solve_discrete_lyapunov(A_comp, Q_lyap)
+            except Exception:
+                w_out[dd] = np.nan
+                continue
+
+            # Ω(S) = (S+2) γ_v(0) + Σ_{l=1}^{S+1} (S+2-l) [γ_v(l) + γ_v(l)']
+            # with γ_v(l) = E J Φ^l Γ_xx(0) J' E'.
+            gamma_v_0 = EJ @ Gamma_xx_0 @ EJ.T
+            Omega_S = (S + 2) * gamma_v_0
+            A_pow = I_comp.copy()
+            for l in range(1, S + 2):
+                A_pow = A_comp @ A_pow
+                gamma_v_l = EJ @ A_pow @ Gamma_xx_0 @ EJ.T
+                Omega_S = Omega_S + (S + 2 - l) * (gamma_v_l + gamma_v_l.T)
+
+            # Ψ(h) = E J Φ^h J' Σ_{ε_x} E', for h = 1..s_bar (Ψ(0) = 0).
+            Psi_arr = np.empty((s_bar, K, K))
+            A_pow = I_comp.copy()
+            for h in range(1, s_bar + 1):
+                A_pow = A_comp @ A_pow
+                Psi_arr[h - 1] = EJ @ A_pow @ J_sel.T @ Sigma_eps_x @ E_sel.T
+
+            # Θ(S) = Σ_{l=-(S+1)}^{S+1} (S+2-|l|) Σ_{h=max(1,1-l)}^{s_bar-max(0,l)} ρ_{h+l} Ψ(h)
+            Theta_S = np.zeros((K, K))
+            for l in range(-(S + 1), S + 2):
+                h_lower = max(1, 1 - l)
+                h_upper = s_bar - max(0, l)
+                if h_lower > h_upper:
+                    continue
+                inner = np.zeros((K, K))
+                for h in range(h_lower, h_upper + 1):
+                    inner += rho[h + l] * Psi_arr[h - 1]
+                Theta_S = Theta_S + (S + 2 - abs(l)) * inner
+
+            Sigma_rr_S = beta_v @ Omega_S @ beta_v.T + (S + 2) * Sigma_wr
+            Sigma_rg_S = beta_v @ (Xi_all[dd] * I_K + Theta_S) @ eta_g
+
+            try:
+                w_out[dd] = solve(Sigma_rr_S, Sigma_rg_S).flatten()
+            except np.linalg.LinAlgError:
+                w_out[dd] = np.nan
+
+        return pd.DataFrame(data=w_out, columns=self.assets.columns)
+
+    def plot_premia_time_series(
+            self,
+            horizons=(0, 4, 8, 12),
+            ci=0.9,
+            size=4,
+            title=r"Time-varying term structure of risk premia $\lambda_{g,t}^{S}$",
+            save_path=None,
+            show_chart=True,
+    ):
+        """
+        Plots the time-varying risk premium for each horizon in `horizons`.
+        Replicates the layout of Figure 8 of the paper: each subplot shows the
+        posterior median of `lambda^S_{g,t}` over time with a shaded credible
+        interval.
+
+        Parameters
+        ----------
+        horizons: iterable of int
+            Horizons `S` (0-indexed) to plot. Each must lie in `[0, s_bar]`.
+            Default `(0, 4, 8, 12)` corresponds to 1Q / 1Y / 2Y / 3Y when the
+            data is quarterly.
+
+        ci: float
+            Width of the credible interval (e.g. 0.9 for 90%).
+
+        size: float
+            Relative subplot size.
+
+        title: str
+            Overall figure title.
+
+        save_path: str, Path
+            File path to save the picture (extension required).
+
+        show_chart: bool
+            Whether to display the chart after saving.
+        """
+        horizons = [h for h in horizons if 0 <= h <= self.s_bar]
+        if len(horizons) == 0:
+            raise ValueError("No valid horizons in `horizons`")
+
+        n = len(horizons)
+        fig, axes = plt.subplots(
+            n,
+            1,
+            figsize=(size * (16 / 7.3), size * n / 1.6),
+            sharex=True,
+        )
+        if n == 1:
+            axes = [axes]
+        if title is not None:
+            fig.suptitle(title)
+
+        median = np.median(self.draws_lambda_g, axis=0)
+        lower = np.quantile(self.draws_lambda_g, (1 - ci) / 2, axis=0)
+        upper = np.quantile(self.draws_lambda_g, (1 + ci) / 2, axis=0)
+
+        for ax, S in zip(axes, horizons):
+            ax.plot(self.lambda_g_dates, median[:, S], color="tab:blue", label="median")
+            ax.fill_between(
+                self.lambda_g_dates,
+                lower[:, S],
+                upper[:, S],
+                color="tab:blue",
+                alpha=0.2,
+                lw=0,
+                label=f"{round(100 * ci)}% CI",
+            )
+            ax.axhline(0, color="black", lw=0.5)
+            ax.set_title(f"S = {S}")
+            ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+            ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        axes[0].legend(frameon=True, loc="best")
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        if show_chart:
+            plt.show()
+        plt.close()
+
+    def plot_premia_term_structure(
+            self,
+            t=None,
+            ci=0.9,
+            size=5,
+            title=None,
+            x_axis_title=r"$S$",
+            save_path=None,
+            show_chart=True,
+    ):
+        """
+        Plots the term structure of risk premia at conditioning time `t`,
+        showing the posterior median across horizons together with a credible
+        interval.
+
+        Parameters
+        ----------
+        t: int, label, or None
+            Conditioning time. If a positional integer (zero-indexed in
+            `lambda_g_dates`), that row is used. If a label, it is matched
+            against `lambda_g_dates`. If None, defaults to the most recent
+            available conditioning time.
+        """
+        if t is None:
+            t_idx = len(self.lambda_g_dates) - 1
+            label = self.lambda_g_dates[t_idx]
+        elif isinstance(t, (int, np.integer)):
+            t_idx = int(t)
+            label = self.lambda_g_dates[t_idx]
+        else:
+            t_idx = self.lambda_g_dates.get_loc(t)
+            label = t
+
+        if title is None:
+            title = rf"$\lambda_{{g,t}}^{{S}}$ at t = {label}"
+
+        snapshot = self.draws_lambda_g[:, t_idx, :]
+        median = np.median(snapshot, axis=0)
+        lower = np.quantile(snapshot, (1 - ci) / 2, axis=0)
+        upper = np.quantile(snapshot, (1 + ci) / 2, axis=0)
+        horizons = np.arange(self.s_bar + 1)
+
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        ax = plt.subplot2grid((1, 1), (0, 0))
+        ax.plot(horizons, median, color="tab:blue", label="median")
+        ax.fill_between(
+            horizons,
+            lower,
+            upper,
+            color="tab:blue",
+            alpha=0.2,
+            lw=0,
+            label=f"{round(100 * ci)}% Credible Interval",
+        )
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set(title=title, xlabel=x_axis_title)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="best")
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        if show_chart:
+            plt.show()
+        plt.close()
+
+    def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None, show_chart=True):
+        df = pd.DataFrame(
+            data=self.draws_loadings.median().values.reshape(self.n, self.k),
+            columns=[k + 1 for k in range(self.k)],
+            index=self.assets.columns,
+        )
+
+        plt.figure(figsize=figsize)
+        ax = plt.subplot2grid((1, 1), (0, 0))
+
+        ax = sns.heatmap(
+            data=df,
+            ax=ax,
+            cmap="RdBu_r",
+            center=0,
+        )
+        ax.xaxis.set_label_position("top")
+        ax.xaxis.tick_top()
+        ax.set(title="Medians of Factor Loadings")
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        if show_chart:
+            plt.show()
+        plt.close()
+
+    def _run_conditional_gibbs(self):
+        # ---------------- Setup ----------------
+        R = self.assets.values
+        mu_r = self.assets.mean().values.reshape(-1, 1)
+        G = self.macro_factor.values[self.s_bar:].reshape(-1, 1)
+        mu_g = self.macro_factor.mean()
+        G_bar = G - mu_g
+        D_r = np.eye(self.k + 1)
+        D_r[0, 0] = 0
+
+        Z = self.predictors.values if self.predictors is not None else None
+        K = self.k
+        Kp = self.k_p
+        q = self.q
+        T = self.t
+        T_eff = self.t_eff
+        n_phi_rows = 1 + q * Kp
+
+        # ---------------- PCA initialization ----------------
+        pca = PCA(n_components=K)
+        pca.fit(self.assets)
+        V0 = pca.fit_transform(self.assets)
+        windows = sliding_window_view(V0, window_shape=self.s_bar + 1, axis=0)
+        windows = windows[:, ::-1, :]
+        V0_mat = windows.reshape(T - self.s_bar, (self.s_bar + 1) * K)
+        X_pca_reg = sm.add_constant(V0_mat)
+        model = sm.OLS(self.macro_factor.iloc[self.s_bar:].to_numpy(), X_pca_reg).fit()
+        beta_vec = model.params[1:]
+        beta_mat = beta_vec.reshape(K, self.s_bar + 1)
+        U, s_sv, Vt = svd(beta_mat, full_matrices=False)
+
+        # Starting parameter values
+        ups = V0.T  # K x T
+        rho_g = Vt[0, :].reshape(-1, 1) * s_sv[0]
+        rho_g = np.insert(rho_g, 0, mu_g).reshape(-1, 1)
+        eta_g = U[:, [0]]
+        B_r = np.zeros((K + 1, self.n))
+
+        # VAR initialization
+        Phi = np.zeros((n_phi_rows, Kp))
+        Phi[0, :K] = ups.mean(axis=1)
+        if Z is not None:
+            Phi[0, K:] = Z.mean(axis=0)
+        Sigma_eps_x = np.eye(Kp)
+
+        # ---------------- Pre-allocate ----------------
+        total_draws = self.n_draws + self.burnin
+        draws_lambda_g = np.empty((total_draws, T_eff, self.s_bar + 1))
+        draws_loadings_arr = np.empty((total_draws, self.n * K))
+        draws_eta_g_arr = np.empty((total_draws, K))
+        draws_rho_arr = np.empty((total_draws, self.s_bar + 1))
+        draws_Sigma_eps_v_arr = np.empty((total_draws, K * K))
+        draws_Sigma_r_arr = np.empty((total_draws, self.n * self.n))
+        draws_Phi_arr = np.empty((total_draws, n_phi_rows * Kp))
+        draws_Sigma_eps_x_arr = np.empty((total_draws, Kp * Kp))
+
+        eye_Kp = np.eye(Kp)
+
+        for dd in tqdm(range(total_draws)):
+
+            # ----- Build x_full and the VAR design matrices for current ups -----
+            x_full = np.hstack([ups.T, Z]) if Z is not None else ups.T
+            X1 = x_full[q:]                                  # (T - q) x Kp
+            X0_blocks = [np.ones((T - q, 1))]
+            for lag in range(1, q + 1):
+                X0_blocks.append(x_full[q - lag : T - lag])
+            X0 = np.concatenate(X0_blocks, axis=1)           # (T - q) x (1 + q*Kp)
+
+            # Conditional mean of x_t for t = q..T-1 (in 0-indexed) using current Phi
+            mu_x_pred = X0 @ Phi                             # (T - q) x Kp
+            eps_x_obs = X1 - mu_x_pred                       # innovations for t=q..T-1
+
+            # Unconditional mean of x_t implied by current Phi (used to pad early
+            # innovations and to center returns).
+            sum_phi = np.zeros((Kp, Kp))
+            for lag in range(1, q + 1):
+                phi_l = Phi[1 + (lag - 1) * Kp : 1 + lag * Kp, :].T
+                sum_phi += phi_l
+            try:
+                uncond_mu_x = solve(eye_Kp - sum_phi, Phi[0, :])
+            except np.linalg.LinAlgError:
+                uncond_mu_x = x_full.mean(axis=0)
+
+            # Pad early innovations (t < q) with x_t - uncond_mean
+            eps_x_full = np.empty((T, Kp))
+            eps_x_full[:q] = x_full[:q] - uncond_mu_x[None, :]
+            eps_x_full[q:] = eps_x_obs
+            eps_v = eps_x_full[:, :K].T                       # K x T
+
+            # In the conditional model the paper assumes E[v_t] = 0 (eq 18 of
+            # the paper), so we use mu_v = 0 for centering the asset return
+            # equation and for the latent factor posterior in step 3. The
+            # VAR-implied unconditional mean is only used to pad the early
+            # innovations (t < q) consistently with the Wold representation.
+            mu_v_zero = np.zeros((K, 1))
+
+            # ----- STEP 1: sample (sigma^2_wg, rho_g, eta_g) given eps_v -----
+            V_rho = _build_V_rho(eps_v, eta_g, self.s_bar, T)
+
+            s2_wg = invgamma.rvs(
+                0.5 * (T - self.s_bar),
+                scale=(0.5 * (G - V_rho @ rho_g).T @ (G - V_rho @ rho_g))[0, 0],
+            )
+
+            rho_g_hat = inv(V_rho.T @ V_rho) @ V_rho.T @ G
+            wg_hat = G - V_rho @ rho_g_hat
+            Sigma_hat_rho = _build_Sigma_hat(V_rho, T, self.s_bar, wg_hat)
+            rho_g = multivariate_normal.rvs(
+                mean=rho_g_hat.reshape(-1),
+                cov=nearest_psd(Sigma_hat_rho),
+            )
+
+            V_eta = _build_V_eta(T, self.s_bar, K, rho_g[1:], eps_v)
+            eta_g_hat = inv(V_eta.T @ V_eta) @ V_eta.T @ G_bar
+            weta_hat = G_bar - V_eta @ eta_g_hat
+            Sigma_hat_eta = _build_Sigma_hat(V_eta, T, self.s_bar, weta_hat)
+            eta_g = multivariate_normal.rvs(
+                mean=eta_g_hat.reshape(-1),
+                cov=nearest_psd(Sigma_hat_eta),
+            ).reshape(-1, 1)
+            eta_g = eta_g / np.sqrt(eta_g.T @ eta_g)
+            draws_eta_g_arr[dd] = eta_g.flatten()
+
+            # ----- STEP 2: sample (Sigma_wr, B_r) for the asset return equation -----
+            V_r = np.column_stack([np.ones(T), (ups.T - mu_v_zero.T)])
+
+            sigma_wr_diag = invgamma.rvs(
+                T - K - 1,
+                scale=np.diag((1 / T) * (R - V_r @ B_r).T @ (R - V_r @ B_r)),
+            )
+            Sigma_wr = np.diag(sigma_wr_diag)
+
+            A_step2 = V_r.T @ V_r + D_r
+            B_r = matrix_normal.rvs(
+                mean=np.linalg.solve(A_step2, V_r.T @ R),
+                rowcov=nearest_psd(inv(A_step2)),
+                colcov=nearest_psd(Sigma_wr),
+            )
+
+            beta_ups = B_r.T[:, 1:]
+            draws_loadings_arr[dd] = beta_ups.flatten()
+
+            # ----- STEP 3: sample latent factors v_t -----
+            beta_scaled = beta_ups / sigma_wr_diag[:, None]
+            cov_v = nearest_psd(inv(beta_scaled.T @ beta_ups))
+            means = cov_v @ (beta_scaled.T @ (R.T - mu_r + beta_ups @ mu_v_zero))
+            L = cholesky(cov_v, lower=True)
+            Z_norm = norm.rvs(size=means.shape)
+            ups = means + L @ Z_norm
+
+            # ----- STEP 4: sample VAR (Phi, Sigma_eps_x) given new v_t -----
+            x_full = np.hstack([ups.T, Z]) if Z is not None else ups.T
+            X1 = x_full[q:]
+            X0_blocks = [np.ones((T - q, 1))]
+            for lag in range(1, q + 1):
+                X0_blocks.append(x_full[q - lag : T - lag])
+            X0 = np.concatenate(X0_blocks, axis=1)
+
+            XtX = X0.T @ X0
+            XtX_inv = inv(XtX)
+            Phi_hat = XtX_inv @ X0.T @ X1
+            resid = X1 - X0 @ Phi_hat
+            scale_iw = nearest_psd(resid.T @ resid)
+            if Kp == 1:
+                Sigma_eps_x = np.array([[invwishart.rvs(df=T - q, scale=scale_iw)]])
+            else:
+                Sigma_eps_x = invwishart.rvs(df=T - q, scale=scale_iw)
+            Phi = matrix_normal.rvs(
+                mean=Phi_hat,
+                rowcov=nearest_psd(XtX_inv),
+                colcov=nearest_psd(Sigma_eps_x),
+            )
+
+            Sigma_eps_v = np.atleast_2d(Sigma_eps_x[:K, :K])
+            draws_Phi_arr[dd] = Phi.flatten()
+            draws_Sigma_eps_x_arr[dd] = Sigma_eps_x.flatten()
+            draws_Sigma_eps_v_arr[dd] = Sigma_eps_v.flatten()
+
+            # Update unconditional mean using new Phi
+            sum_phi = np.zeros((Kp, Kp))
+            for lag in range(1, q + 1):
+                phi_l = Phi[1 + (lag - 1) * Kp : 1 + lag * Kp, :].T
+                sum_phi += phi_l
+            try:
+                uncond_mu_x = solve(eye_Kp - sum_phi, Phi[0, :])
+            except np.linalg.LinAlgError:
+                uncond_mu_x = x_full.mean(axis=0)
+
+            # ----- STEP 5: compute lambda_v and time-varying lambda^S_{g,t} -----
+            Sigma_r = beta_ups @ Sigma_eps_v @ beta_ups.T + Sigma_wr
+            mu_tilde = mu_r + 0.5 * np.diag(Sigma_r).reshape(-1, 1)
+            lambda_v = inv(beta_ups.T @ beta_ups) @ beta_ups.T @ mu_tilde   # K x 1
+
+            draws_Sigma_r_arr[dd] = Sigma_r.flatten()
+            draws_rho_arr[dd] = rho_g[1:].flatten()
+
+            # Build VAR companion form for multi-step forecasting
+            comp_size = q * Kp
+            c_comp = np.zeros(comp_size)
+            c_comp[:Kp] = Phi[0, :]
+            A_comp = np.zeros((comp_size, comp_size))
+            for lag in range(1, q + 1):
+                phi_l = Phi[1 + (lag - 1) * Kp : 1 + lag * Kp, :].T
+                A_comp[:Kp, (lag - 1) * Kp : lag * Kp] = phi_l
+            if q > 1:
+                A_comp[Kp:, : (q - 1) * Kp] = np.eye(comp_size - Kp)
+
+            # Initial companion states for each conditioning time tau in [q-1..T-2]
+            # y_{tau} = [x_{tau}, x_{tau-1}, ..., x_{tau-q+1}]
+            x_full_curr = np.hstack([ups.T, Z]) if Z is not None else ups.T
+            Y_init = np.empty((T_eff, comp_size))
+            for lag in range(q):
+                Y_init[:, lag * Kp : (lag + 1) * Kp] = x_full_curr[q - 1 - lag : q - 1 - lag + T_eff]
+
+            # Iterate: y^{(h)} = c + A y^{(h-1)}, batched across conditioning times.
+            v_forecasts = np.empty((T_eff, self.s_bar + 1, K))
+            Y = Y_init
+            for h in range(self.s_bar + 1):
+                Y = Y @ A_comp.T + c_comp[None, :]
+                v_forecasts[:, h, :] = Y[:, :K]
+
+            # Compute lambda^S_{g,tau} for each tau and each S
+            rho_arr = rho_g[1:].flatten()
+            cumsum_rho = np.cumsum(rho_arr)
+            sum_lambda = lambda_v.flatten()[None, None, :] + v_forecasts   # (T_eff, s_bar+1, K)
+            alpha = sum_lambda @ eta_g.flatten()                            # (T_eff, s_bar+1)
+
+            lambda_g_t_S = np.empty((T_eff, self.s_bar + 1))
+            for S in range(self.s_bar + 1):
+                coeffs = cumsum_rho[S::-1]
+                lambda_g_t_S[:, S] = (alpha[:, : S + 1] * coeffs[None, :]).sum(axis=1) / (S + 1)
+            draws_lambda_g[dd] = lambda_g_t_S
+
+        # ---------------- Convert arrays to DataFrames (post-burnin only) ----------------
+        post = slice(-self.n_draws, None)
+        loadings_columns = [
+            f"{a} - loading {v + 1}"
+            for a, v in product(self.assets.columns, range(K))
+        ]
+        eta_g_columns = [f"eta_g_{v + 1}" for v in range(K)]
+        rho_columns = [f"rho_{l}" for l in range(self.s_bar + 1)]
+        Sigma_eps_v_columns = [
+            f"Sigma_eps_v_{i + 1}_{j + 1}"
+            for i, j in product(range(K), range(K))
+        ]
+        Sigma_r_columns = [
+            f"Sigma_r_{a}_{b}"
+            for a, b in product(self.assets.columns, self.assets.columns)
+        ]
+        x_names = list(self.assets.columns[:0])  # unused; we use generic names below
+        x_labels = [f"v_{i + 1}" for i in range(K)]
+        if self.p > 0:
+            x_labels += list(self.predictors.columns)
+        Phi_row_labels = ["const"]
+        for lag in range(1, q + 1):
+            Phi_row_labels += [f"lag{lag}_{name}" for name in x_labels]
+        Phi_columns = [
+            f"Phi[{r},{c}]"
+            for r, c in product(Phi_row_labels, x_labels)
+        ]
+        Sigma_eps_x_columns = [
+            f"Sigma_eps_x_{a}_{b}"
+            for a, b in product(x_labels, x_labels)
+        ]
+
+        df_loadings = pd.DataFrame(draws_loadings_arr[post], columns=loadings_columns)
+        df_eta_g = pd.DataFrame(draws_eta_g_arr[post], columns=eta_g_columns)
+        df_rho = pd.DataFrame(draws_rho_arr[post], columns=rho_columns)
+        df_Sigma_eps_v = pd.DataFrame(draws_Sigma_eps_v_arr[post], columns=Sigma_eps_v_columns)
+        df_Sigma_r = pd.DataFrame(draws_Sigma_r_arr[post], columns=Sigma_r_columns)
+        df_Phi = pd.DataFrame(draws_Phi_arr[post], columns=Phi_columns)
+        df_Sigma_eps_x = pd.DataFrame(draws_Sigma_eps_x_arr[post], columns=Sigma_eps_x_columns)
+        lambda_g_post = draws_lambda_g[post]
+
+        return (
+            lambda_g_post,
+            df_loadings,
+            df_eta_g,
+            df_rho,
+            df_Sigma_eps_v,
+            df_Sigma_r,
+            df_Phi,
+            df_Sigma_eps_x,
+        )
+
+    def _get_number_latent_factors(self):
+        retp_ret = ((self.assets - self.assets.mean()).T @ (self.assets - self.assets.mean())).values
+        eigv = np.sort(eigvals(retp_ret).real)[::-1]
+        eigv_normalized = eigv / (self.t * self.n)
+        gamma_hat = np.median(eigv_normalized[:self.k_max])
+        phi_nt = 0.5 * gamma_hat * np.log(self.t * self.n) * (self.t ** (-0.5) + self.n ** (-0.5))
+        j = np.arange(1, self.k_max + 1)
+        grid = eigv_normalized[:self.k_max] + j * phi_nt
+        k_hat = max(1, np.argmin(grid))
+        print("selected number of factors is", k_hat)
+        return k_hat
+
+    @staticmethod
+    def _assertions(assets, factor, predictors):
+        assert factor.index.equals(assets.index), \
+            "the index for `factor` and `assets` must match"
+        if predictors is not None:
+            assert predictors.index.equals(assets.index), \
+                "the index for `predictors` and `assets` must match"

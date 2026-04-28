@@ -10,6 +10,7 @@ from empfin.data_readers import (
     msb_replication,
 )
 from empfin.factor_models import (
+    ConditionalRiskPremiaTermStructure,
     CrossSectionReg,
     NonTradableFactors,
     RiskPremiaTermStructure,
@@ -17,6 +18,7 @@ from empfin.factor_models import (
 )
 
 __all__ = [
+    "ConditionalRiskPremiaTermStructure",
     "CrossSectionReg",
     "NonTradableFactors",
     "RiskPremiaTermStructure",
