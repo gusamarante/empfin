@@ -25,69 +25,12 @@ from empfin.utils import nearest_psd
 
 # TODO models to implement
 #  Fama-Macbeth
-#  Bayesian Fama-MacBeth (move from bayesfm)
 #  GMM
 #  GLS
 
-
-def _build_V_rho(centered, eta_g, sbar, t):
-    """
-    Builds the regressor matrix for sampling `rho_g` in the time-series
-    equation for the macro factor. `centered` is the centered/innovation
-    tensor of latent factors with shape (K, T): `(v_t - mu_v)` for the
-    unconditional model and the VAR innovations `eps_vt` for the conditional
-    model.
-    """
-    elements = centered.T.dot(eta_g)
-    W = sliding_window_view(elements.reshape(-1), sbar + 1)
-    W = W[:, ::-1]
-    V_rho = np.concatenate([np.ones((t - sbar, 1)), W], axis=1)
-    return V_rho
-
-
-def _build_V_eta(T, Sbar, K, rho, centered):
-    """
-    Builds the regressor matrix for sampling `eta_g`. `centered` has shape
-    (K, T) and follows the same convention as in `_build_V_rho`.
-    """
-    V_eta = np.empty((T - Sbar, K))
-    for t in range(T - Sbar):
-        V_eta[t, :] = np.sum(
-            rho[:, None] * centered[:, Sbar + t - np.arange(Sbar + 1)].T,
-            axis=0,
-        )
-    return V_eta
-
-
-def _build_Sigma_hat(V, T, Sbar, w_hat):
-    """
-    Newey-West sandwich estimator for the posterior covariance of `rho_g` and
-    `eta_g`, accounting for autocorrelation in the residuals up to lag `Sbar`.
-    """
-    sum1 = sum(
-        (w_hat[it, 0] ** 2) * V[[it], :].T @ V[[it], :]
-        for it in range(w_hat.shape[0])
-    )
-    sum2 = sum(
-        _build_Gamma_hat_rho_l(T, Sbar, w_hat, V, l) * (1 - (l / (1 + Sbar)))
-        for l in range(1, Sbar + 1)
-    )
-    S_hat_rho = (1 / (T - Sbar)) * sum1 + sum2
-    Sigma_hat_rho = inv(V.T @ V) @ ((T - Sbar) * S_hat_rho) @ inv(V.T @ V)
-    return Sigma_hat_rho
-
-
-def _build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l):
-    Gamma = np.zeros((V_rho.shape[1], V_rho.shape[1]))
-    for it in range(l, T - Sbar):
-        scalar = wg_hat[it, 0] * wg_hat[it - l, 0]
-        mat1 = V_rho[[it], :].T @ V_rho[[it - l], :]
-        mat2 = V_rho[[it - l], :].T @ V_rho[[it], :]
-        Gamma += scalar * (mat1 + mat2)
-    Gamma = Gamma * (1 / (T - Sbar - l))
-    return Gamma
-
-
+# ========================
+# ===== The Classics =====
+# ========================
 class TimeseriesReg:
     """
     References:
@@ -681,6 +624,68 @@ class NonTradableFactors:
         var_g1 = sf * D + var_g0 * D @ C.T @ C @ D
 
         return var_g0, var_g1
+
+
+# =============================================================
+# ===== Macro Strikes Back - Bryzgalova, Huang & Julliard =====
+# =============================================================
+def _build_V_rho(centered, eta_g, sbar, t):
+    """
+    Builds the regressor matrix for sampling `rho_g` in the time-series
+    equation for the macro factor. `centered` is the centered/innovation
+    tensor of latent factors with shape (K, T): `(v_t - mu_v)` for the
+    unconditional model and the VAR innovations `eps_vt` for the conditional
+    model.
+    """
+    elements = centered.T.dot(eta_g)
+    W = sliding_window_view(elements.reshape(-1), sbar + 1)
+    W = W[:, ::-1]
+    V_rho = np.concatenate([np.ones((t - sbar, 1)), W], axis=1)
+    return V_rho
+
+
+def _build_V_eta(T, Sbar, K, rho, centered):
+    """
+    Builds the regressor matrix for sampling `eta_g`. `centered` has shape
+    (K, T) and follows the same convention as in `_build_V_rho`.
+    """
+    V_eta = np.empty((T - Sbar, K))
+    for t in range(T - Sbar):
+        V_eta[t, :] = np.sum(
+            rho[:, None] * centered[:, Sbar + t - np.arange(Sbar + 1)].T,
+            axis=0,
+        )
+    return V_eta
+
+
+def _build_Sigma_hat(V, T, Sbar, w_hat):
+    """
+    Newey-West sandwich estimator for the posterior covariance of `rho_g` and
+    `eta_g`, accounting for autocorrelation in the residuals up to lag `Sbar`.
+    """
+    sum1 = sum(
+        (w_hat[it, 0] ** 2) * V[[it], :].T @ V[[it], :]
+        for it in range(w_hat.shape[0])
+    )
+    sum2 = sum(
+        _build_Gamma_hat_rho_l(T, Sbar, w_hat, V, l) * (1 - (l / (1 + Sbar)))
+        for l in range(1, Sbar + 1)
+    )
+    S_hat_rho = (1 / (T - Sbar)) * sum1 + sum2
+    Sigma_hat_rho = inv(V.T @ V) @ ((T - Sbar) * S_hat_rho) @ inv(V.T @ V)
+    return Sigma_hat_rho
+
+
+def _build_Gamma_hat_rho_l(T, Sbar, wg_hat, V_rho, l):
+    Gamma = np.zeros((V_rho.shape[1], V_rho.shape[1]))
+    for it in range(l, T - Sbar):
+        scalar = wg_hat[it, 0] * wg_hat[it - l, 0]
+        mat1 = V_rho[[it], :].T @ V_rho[[it - l], :]
+        mat2 = V_rho[[it - l], :].T @ V_rho[[it], :]
+        Gamma += scalar * (mat1 + mat2)
+    Gamma = Gamma * (1 / (T - Sbar - l))
+    return Gamma
+
 
 class RiskPremiaTermStructure:
     """
@@ -1764,3 +1769,355 @@ class ConditionalRiskPremiaTermStructure:
             "`predictors` is required: the restricted VAR has latent factors load only on lagged predictors"
         assert predictors.index.equals(assets.index), \
             "the index for `predictors` and `assets` must match"
+
+
+# ================================================================
+# ===== Bayesian Fama-MacBeth - Bryzgalova, Huang & Julliard =====
+# ================================================================
+class FM:
+    # TODO Replace this class with a not-so-simple Fama-MacBeth
+
+    def __init__(self, assets, factors):
+        """
+        Very simple implementation of the Fama-MacBeth regression using OLS.
+
+        Parameters
+        ----------
+        assets : pandas.DataFrame
+            returns of the test assets
+
+        factors : pandas.DataFrame
+            returns of the factor portfolios
+        """
+
+        self.beta = pd.DataFrame(
+            data=(inv(factors.T @ factors) @ factors.T @ assets).values,
+            columns=assets.columns,
+            index=factors.columns,
+        ).T
+
+        mu = assets.mean()
+        self.lambdas = pd.Series(
+            data=(inv(self.beta.T @ self.beta) @ self.beta.T @ mu).values,
+            index=factors.columns,
+            name="Lambdas",
+        )
+
+
+class BFM:
+    """
+    This class works as both the baseline implementation of the Bayesian
+    Fama-MacBeth and the parent class for other variations, which follow the
+    same steps, but with different computations.
+    """
+
+    def __init__(self, assets, factors, n_draws=1000):
+        """
+        Implementation of the BFM-OLS
+
+        Parameters
+        ----------
+        assets : pandas.DataFrame
+            returns of the test assets
+
+        factors : pandas.DataFrame
+            returns of the factor portfolios
+
+        n_draws : int
+            number of draws from the posterior
+        """
+        self.assets = assets
+        self.factors = factors
+        self.n_draws = n_draws
+        self.y = pd.concat([assets, factors], axis=1).dropna()
+
+        self.t = self.y.shape[0]  # Sample size of the timeseries dimension
+        self.n = assets.shape[1]  # Number of test assets
+        self.k = factors.shape[1]  # Number of factors
+
+        self.mu_y = self.y.mean()
+        self.Sigma_y = self.y.cov()
+
+        self.draws_mu_y, self.draws_Sigma_y = self._draw_mu_sigma()
+        self.draws_betas = self._compute_betas()
+
+        self.draws_lambdas = self._compute_lambdas()
+        self.draws_r2 = self._compute_r2()
+
+        # Reorganize in Pandas
+        self.draws_lambdas = pd.DataFrame(
+            data=self.draws_lambdas,
+            columns=factors.columns
+        )
+        self.draws_r2 = pd.Series(
+            data=self.draws_r2,
+            name="R2",
+        )
+
+    def _draw_mu_sigma(self):
+        # Draws covariance from inverse wishart
+        draws_sigma = invwishart.rvs(
+            df=self.t - 1,
+            scale=self.t * self.Sigma_y,
+            size=self.n_draws,
+        )
+
+        # Draws mu from normal, conditional on previous covariances
+        draws_mu = np.array(
+            [
+                multivariate_normal.rvs(
+                    mean=self.mu_y,
+                    cov=(1 / self.t) * cov,
+                )
+                for cov in draws_sigma
+            ]
+        )
+
+        return draws_mu, draws_sigma
+
+    def _compute_betas(self):
+        draws_beta = np.array(
+            [
+                cov[:self.n, -self.k:] @ inv(cov[-self.k:, -self.k:])
+                for cov in self.draws_Sigma_y
+            ]
+        )
+        return draws_beta
+
+    def _compute_lambdas(self):
+        # campute lambdas from betas and mus
+        draws_lambda = np.array(
+            [
+                inv(b.T @ b) @ b.T @ mu[:self.n]
+                for mu, b in zip(self.draws_mu_y, self.draws_betas)
+            ]
+        )
+
+        return draws_lambda
+
+    def _compute_r2(self):
+        draws_r2 = []
+        for mu, b, l in zip(self.draws_mu_y, self.draws_betas, self.draws_lambdas):
+            mu_r = mu[:self.n]
+            mu_r_bar = mu_r.mean()
+            num = (mu_r - b @ l) @ (mu_r - b @ l)
+            denom = (mu_r - mu_r_bar) @ (mu_r - mu_r_bar)
+            draws_r2.append(1 - num / denom)
+        return draws_r2
+
+    def plot_lambda(self, include_fm=False):
+        """
+        Plots the posterior distributions for the risk premia
+
+        Parameters
+        ----------
+        include_fm : bool
+            If true, adds a vertical line indicating the values for the
+            canonical OLS Fama-MacBeth regression.
+        """
+        axes = self.draws_lambdas.hist(
+            density=True,
+            bins=int(np.sqrt(self.n_draws)),
+            sharex=True,
+            figsize=(10, 6)
+        )
+
+        if include_fm:
+            fm = FM(self.assets, self.factors)
+            for ax in axes.flatten():
+                try:
+                    ax.axvline(
+                        fm.lambdas[ax.title.get_text()],
+                        color='tab:orange',
+                        lw=2,
+                    )
+                except KeyError:
+                    continue
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_r2(self):
+        """
+        Plots the posteurior distribution for the R2
+        """
+        axes = self.draws_r2.hist(
+            density=True,
+            bins=int(np.sqrt(self.n_draws)),
+            figsize=(10, 6)
+        )
+        plt.tight_layout()
+        plt.show()
+
+    def ci_table_lambda(self, cred=0.95):
+        """
+        Return a DataFrame with the median and the credible interval with the
+        chosen level of credibility for the risk premia
+
+        Parameters
+        ----------
+        cred : float
+            number between 0 and 1 indicating the credibility level of the
+            interval
+        """
+        table = self.draws_lambdas.quantile(
+            q=[
+                (1 - cred) / 2,
+                0.5,
+                (1 + cred) / 2,
+            ],
+        )
+        table.index.name = "Quantiles"
+        return table
+
+    def ci_table_r2(self, cred=0.95):
+        """
+        Return a DataFrame with the median and the credible interval with the
+        chosen level of credibility for the R2
+
+        Parameters
+        ----------
+        cred : float
+            number between 0 and 1 indicating the credibility level of the
+            interval
+        """
+        table = self.draws_r2.quantile(
+            q=[
+                (1 - cred) / 2,
+                0.5,
+                (1 + cred) / 2,
+            ],
+        )
+        table.index.name = "Quantiles"
+        return table
+
+
+class BFMGLS(BFM):
+    """
+    This class inherits all the methods and constructor from BFM but modifies
+    the computation of the risk premia and R2 to use the GLS precision matrix
+    """
+
+    def _compute_lambdas(self):
+        # compute idiosyncratic error covariance
+        draws_sige = np.array(
+            [
+                cov[:self.n, :self.n] - cov[:self.n, -self.k:] @ inv(cov[-self.k:, -self.k:]) @ cov[:self.n, -self.k:].T
+                for cov in self.draws_Sigma_y
+            ]
+        )
+
+        # campute lambdas from betas and mus
+        draws_lambda = np.array(
+            [
+                inv(b.T @ inv(sige) @ b) @ b.T @ inv(sige) @ mu[:self.n]
+                for mu, b, sige in zip(self.draws_mu_y, self.draws_betas, draws_sige)
+            ]
+        )
+
+        return draws_lambda
+
+    def _compute_r2(self):
+        draws_sige = np.array(
+            [
+                cov[:self.n, :self.n] - cov[:self.n, -self.k:] @ inv(cov[-self.k:, -self.k:]) @ cov[:self.n, -self.k:].T
+                for cov in self.draws_Sigma_y
+            ]
+        )
+
+        draws_r2 = []
+        for mu, b, l, sige in zip(self.draws_mu_y, self.draws_betas, self.draws_lambdas, draws_sige):
+            mu_r = mu[:self.n]
+            mu_r_bar = mu_r.mean()
+            prec = inv(sige)
+            num = (mu_r - b @ l) @ prec @ (mu_r - b @ l)
+            denom = (mu_r - mu_r_bar) @ prec @ (mu_r - mu_r_bar)
+            draws_r2.append(1 - num / denom)
+        return draws_r2
+
+
+class BFMOMIT(BFM):
+    """
+    This class inherits all the methods and constructor from BFM but modifies
+    the computation of the risk premia and R2 to use the BFM-OMIT methodology
+    """
+
+    def __init__(self, assets, factors, n_draws=1000, p=5):
+        """
+        Implementation of the BFM-OMIT
+
+        Parameters
+        ----------
+        assets : pandas.DataFrame
+            returns of the test assets
+
+        factors : pandas.DataFrame
+            returns of the factor portfolios
+
+        n_draws : int
+            number of draws from the posterior
+
+        p : int
+            number of principal components to use
+        """
+        self.p = p
+        super().__init__(assets, factors, n_draws)
+
+    def _compute_lambdas(self):
+
+        def cov_svd(cov):
+            # β_v is the first P columns of U·Λ^{1/2} (Definition 3).
+            u, s, _ = svd(cov)
+            return (u @ np.diag(np.sqrt(s)))[:, :self.p]
+
+        draws_beta_upsilon = np.array(
+            [
+                cov_svd(cov[:self.n, :self.n])
+                for cov in self.draws_Sigma_y
+            ]
+        )
+
+        draws_lambda_upsilon = np.array(
+            [
+                inv(b.T @ b) @ b.T @ mu[:self.n]
+                for b, mu in zip(draws_beta_upsilon, self.draws_mu_y)
+            ]
+        )
+
+        draws_lambda_f = np.array(
+            [
+                lu.T @ inv(bu.T @ bu) @ bu.T @ cov[:self.n, -self.k:]
+                for lu, bu, cov in zip(draws_lambda_upsilon, draws_beta_upsilon, self.draws_Sigma_y)
+            ]
+        )
+
+        return draws_lambda_f
+
+    def _compute_r2(self):
+
+        def cov_svd(cov):
+            u, s, _ = svd(cov)
+            return (u @ np.diag(np.sqrt(s)))[:, :self.p]
+
+        draws_beta_upsilon = np.array(
+            [
+                cov_svd(cov[:self.n, :self.n])
+                for cov in self.draws_Sigma_y
+            ]
+        )
+
+        draws_lambda_upsilon = np.array(
+            [
+                inv(b.T @ b) @ b.T @ mu[:self.n]
+                for b, mu in zip(draws_beta_upsilon, self.draws_mu_y)
+            ]
+        )
+
+        draws_r2 = []
+        for mu, bu, lu in zip(self.draws_mu_y, draws_beta_upsilon, draws_lambda_upsilon):
+            mu_r = mu[:self.n]
+            mu_r_bar = mu_r.mean()
+            num = (mu_r - bu @ lu) @ (mu_r - bu @ lu)
+            denom = (mu_r - mu_r_bar) @ (mu_r - mu_r_bar)
+            draws_r2.append(1 - num / denom)
+        return np.array(draws_r2)
