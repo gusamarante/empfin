@@ -94,6 +94,52 @@ def msb_replication():
     data_df.index = pd.to_datetime(data_df.index)
     return data_df
 
+def msb_conditional_replication():
+    """
+    Loads the authors' replication data for the *conditional* model in
+    "Macro Strikes Back: Term Structure of Risk Premia". Both files use a
+    sequential integer index in their on-disk form; this function attaches the
+    quarterly datetime index 1963Q3..2019Q4 used by the paper.
+
+    Returns
+    -------
+    data_df: pandas.DataFrame
+        FF275 portfolio returns plus a column ``"GDP"`` (standardized real GDP
+        growth) on a quarterly datetime index.
+
+    predictors: pandas.DataFrame
+        The four external predictors used as ``z_t`` in the VAR
+        (``pe_ratio``, ``term_spread``, ``default_spread``, ``value_spread``).
+    """
+    try:  # If repo is cloned, try to read locally for performance
+        data_df = pd.read_csv(
+            "../sample-data/conditional/GDP_data.csv",
+            index_col=0,
+        )
+        predictors = pd.read_csv(
+            "../sample-data/conditional/external_predictors_data.csv",
+            index_col=0,
+        )
+    except FileNotFoundError:  # If fails, when the package is installed, grab online
+        data_df = pd.read_csv(
+            urljoin(GITHUB_DATA, quote("conditional/GDP_data.csv")),
+            index_col=0,
+        )
+        predictors = pd.read_csv(
+            urljoin(GITHUB_DATA, quote("conditional/external_predictors_data.csv")),
+            index_col=0,
+        )
+
+    # First column has the R-mangled name for normalized real GDP growth
+    data_df = data_df.rename(columns={data_df.columns[0]: "GDP"})
+    data_df.columns = data_df.columns.str.replace("as.matrix(window(assets, start = c(1963, 3), end = c(2019, 4))).", "")
+
+    dates = pd.date_range(start="1963-09-30", periods=len(data_df), freq="QE")
+    data_df.index = dates
+    predictors.index = dates
+
+    return data_df, predictors
+
 def ust_futures():
     """
     Loads the US bond futures excess return indexes for 6 different maturities

@@ -8,6 +8,7 @@ from empfin.data_readers import (
     us_cpi,
     vix,
     msb_replication,
+    msb_conditional_replication,
 )
 from empfin.factor_models import (
     ConditionalRiskPremiaTermStructure,
@@ -26,6 +27,7 @@ __all__ = [
     "bond_futures",
     "ff25p",
     "ff5f",
+    "msb_conditional_replication",
     "msb_replication",
     "plot_correlogram",
     "us_cpi",
