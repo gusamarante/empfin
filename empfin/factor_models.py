@@ -1896,12 +1896,13 @@ class BFM:
         return draws_lambda
 
     def _compute_r2(self):
-        mu_r = self.mu_y[:self.n].values
-        denom = (mu_r - mu_r.mean()) @ (mu_r - mu_r.mean())
-        draws_r2 = [
-            1 - ((mu_r - b @ l) @ (mu_r - b @ l)) / denom
-            for b, l in zip(self.draws_betas, self.draws_lambdas)
-        ]
+        draws_r2 = []
+        for mu, b, l in zip(self.draws_mu_y, self.draws_betas, self.draws_lambdas):
+            mu_r = mu[:self.n]
+            mu_r_bar = mu_r.mean()
+            num = (mu_r - b @ l) @ (mu_r - b @ l)
+            denom = (mu_r - mu_r_bar) @ (mu_r - mu_r_bar)
+            draws_r2.append(1 - num / denom)
         return draws_r2
 
     def plot_lambda(self, include_fm=False):
@@ -2024,13 +2025,14 @@ class BFMGLS(BFM):
             ]
         )
 
-        mu_r = self.mu_y[:self.n].values
-        mu_r_bar = mu_r.mean()
-
-        draws_r2 = [
-            1 - ((mu_r - b @ l) @ inv(sige) @ (mu_r - b @ l)) / ((mu_r - mu_r_bar) @ inv(sige) @ (mu_r - mu_r_bar))
-            for b, l, sige in zip(self.draws_betas, self.draws_lambdas, draws_sige)
-        ]
+        draws_r2 = []
+        for mu, b, l, sige in zip(self.draws_mu_y, self.draws_betas, self.draws_lambdas, draws_sige):
+            mu_r = mu[:self.n]
+            mu_r_bar = mu_r.mean()
+            prec = inv(sige)
+            num = (mu_r - b @ l) @ prec @ (mu_r - b @ l)
+            denom = (mu_r - mu_r_bar) @ prec @ (mu_r - mu_r_bar)
+            draws_r2.append(1 - num / denom)
         return draws_r2
 
 
@@ -2064,8 +2066,9 @@ class BFMOMIT(BFM):
     def _compute_lambdas(self):
 
         def cov_svd(cov):
+            # β_v is the first P columns of U·Λ^{1/2} (Definition 3).
             u, s, _ = svd(cov)
-            return (u @ np.diag(s))[:, :self.p]
+            return (u @ np.diag(np.sqrt(s)))[:, :self.p]
 
         draws_beta_upsilon = np.array(
             [
@@ -2094,7 +2097,7 @@ class BFMOMIT(BFM):
 
         def cov_svd(cov):
             u, s, _ = svd(cov)
-            return (u @ np.diag(s))[:, :self.p]
+            return (u @ np.diag(np.sqrt(s)))[:, :self.p]
 
         draws_beta_upsilon = np.array(
             [
@@ -2110,12 +2113,11 @@ class BFMOMIT(BFM):
             ]
         )
 
-        mu_r = self.mu_y[:self.n].values
-        mu_r_bar = mu_r.mean()
-        draws_r2 = np.array(
-            [
-                1 - ((mu_r - bu @ lu) @ (mu_r - bu @ lu)) / ((mu_r - mu_r_bar) @ (mu_r - mu_r_bar))
-                for lu, bu in zip(draws_lambda_upsilon, draws_beta_upsilon)
-            ]
-        )
-        return draws_r2
+        draws_r2 = []
+        for mu, bu, lu in zip(self.draws_mu_y, draws_beta_upsilon, draws_lambda_upsilon):
+            mu_r = mu[:self.n]
+            mu_r_bar = mu_r.mean()
+            num = (mu_r - bu @ lu) @ (mu_r - bu @ lu)
+            denom = (mu_r - mu_r_bar) @ (mu_r - mu_r_bar)
+            draws_r2.append(1 - num / denom)
+        return np.array(draws_r2)
