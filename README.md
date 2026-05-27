@@ -8,9 +8,10 @@ Currently available models for estimation of risk premia:
 - `NonTradableFactors`: iterative maximum-likelihood estimator for non-tradable factors, described in [Campbell, Lo & MacKinlay (2012)](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019), Section 6.2.3 
 - `RiskPremiaTermStructure`: term structure of risk premia with a single factor, tradable or not, following [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696). I would like to thank the authors for sharing their replication files.
 - `ConditionalRiskPremiaTermStructure`: conditional, VAR-augmented version of the term-structure estimator, from [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696).
-- `BFM`: Bayesian Fama-MacBeth (BFM-OLS), which replaces the two-pass point estimates with a posterior distribution over the risk premia, described in [Bryzgalova, Huang & Julliard (2024)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4989615).
-- `BFMGLS`: GLS variant of the Bayesian Fama-MacBeth, which uses the idiosyncratic-error precision matrix in the cross-sectional step, described in the [Bryzgalova, Huang & Julliard (2024)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4989615).
-- `BFMOMIT`: variant of the Bayesian Fama-MacBeth that is robust to omitted factors by projecting onto the principal components of the asset-return covariance, described in the [Bryzgalova, Huang & Julliard (2024)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4989615).
+- Bayesian Fama-MacBeth Regressions from [Bryzgalova, Huang & Julliard (2024)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4989615):
+  - `BFM`: Bayesian Fama-MacBeth (BFM-OLS), which replaces the two-pass point estimates with a posterior distribution over the risk premia
+  - `BFMGLS`: GLS variant of the Bayesian Fama-MacBeth, which uses the idiosyncratic-error precision matrix in the cross-sectional step
+  - `BFMOMIT`: variant of the Bayesian Fama-MacBeth that is robust to omitted factors by projecting onto the principal components of the asset-return covariance
 
 # Examples
 For each model, there is a jupyter notebook with [examples](https://github.com/gusamarante/empfin/tree/main/examples) of their use.
