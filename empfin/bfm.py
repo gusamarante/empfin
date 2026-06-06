@@ -7,6 +7,8 @@ from scipy.stats import (
     multivariate_normal,
 )
 
+from empfin.classics import FamaMacBeth
+
 
 class BFM:
     """
@@ -127,7 +129,7 @@ class BFM:
         )
 
         if include_fm:
-            fm = FM(self.assets, self.factors)
+            fm = FamaMacBeth(self.assets, self.factors)
             for ax in axes.flatten():
                 try:
                     ax.axvline(
