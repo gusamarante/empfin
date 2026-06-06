@@ -642,13 +642,12 @@ class FamaMacBeth:
         Two-pass Fama-MacBeth (1973) estimator of factor risk premia.
 
         First pass: for each asset, run a time-series regression of its excess
-        return on the factors with an intercept; the slope coefficients are
-        that asset's betas (factor loadings).
+        return on the factors with an intercept.
 
         Second pass: at each period t, run a cross-sectional OLS regression of
         that period's asset returns on the first-pass betas, optionally with
         an intercept. The risk premium estimate for each factor is the
-        time-series mean of the cross-sectional slopes; standard errors come
+        time-series mean of the cross-sectional slopes. Standard errors come
         from the time-series variability of those slopes.
 
         Defaults are the classical, unconditional, full-sample Fama-MacBeth
@@ -760,8 +759,7 @@ class FamaMacBeth:
         so the first w-1 cross-sections are skipped.
 
         Newey-West (Petersen 2009) on the lambda time series corrects for
-        serial correlation in the cross-sectional slope estimates; the
-        truncation lag is the user's responsibility.
+        serial correlation in the cross-sectional slope estimates.
         """
         if isinstance(factors, pd.Series):
             factors = factors.to_frame()
