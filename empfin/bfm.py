@@ -8,36 +8,6 @@ from scipy.stats import (
 )
 
 
-class FM:
-    # TODO Replace this class with a not-so-simple Fama-MacBeth
-
-    def __init__(self, assets, factors):
-        """
-        Very simple implementation of the Fama-MacBeth regression using OLS.
-
-        Parameters
-        ----------
-        assets : pandas.DataFrame
-            returns of the test assets
-
-        factors : pandas.DataFrame
-            returns of the factor portfolios
-        """
-
-        self.beta = pd.DataFrame(
-            data=(inv(factors.T @ factors) @ factors.T @ assets).values,
-            columns=assets.columns,
-            index=factors.columns,
-        ).T
-
-        mu = assets.mean()
-        self.lambdas = pd.Series(
-            data=(inv(self.beta.T @ self.beta) @ self.beta.T @ mu).values,
-            index=factors.columns,
-            name="Lambdas",
-        )
-
-
 class BFM:
     """
     This class works as both the baseline implementation of the Bayesian
