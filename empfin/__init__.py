@@ -10,16 +10,9 @@ from empfin.data_readers import (
     msb_replication,
     msb_conditional_replication,
 )
-from empfin.factor_models import (
-    BFM,
-    BFMGLS,
-    BFMOMIT,
-    ConditionalRiskPremiaTermStructure,
-    CrossSectionReg,
-    NonTradableFactors,
-    RiskPremiaTermStructure,
-    TimeseriesReg,
-)
+from empfin.bfm import BFM, BFMGLS, BFMOMIT
+from empfin.classics import CrossSectionReg, NonTradableFactors, TimeseriesReg
+from empfin.msb import ConditionalRiskPremiaTermStructure, RiskPremiaTermStructure
 
 __all__ = [
     "BFM",
