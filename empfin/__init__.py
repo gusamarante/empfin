@@ -11,7 +11,7 @@ from empfin.data_readers import (
     msb_conditional_replication,
 )
 from empfin.bfm import BFM, BFMGLS, BFMOMIT
-from empfin.classics import CrossSectionReg, NonTradableFactors, TimeseriesReg
+from empfin.classics import CrossSectionReg, FamaMacBeth, NonTradableFactors, TimeseriesReg
 from empfin.msb import ConditionalRiskPremiaTermStructure, RiskPremiaTermStructure
 
 __all__ = [
@@ -20,6 +20,7 @@ __all__ = [
     "BFMOMIT",
     "ConditionalRiskPremiaTermStructure",
     "CrossSectionReg",
+    "FamaMacBeth",
     "NonTradableFactors",
     "RiskPremiaTermStructure",
     "TimeseriesReg",

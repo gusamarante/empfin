@@ -8,6 +8,7 @@ from numpy.linalg import inv, solve, det
 from scipy.stats import (
     chi2,
     f,
+    t as t_dist,
 )
 from sklearn.exceptions import ConvergenceWarning
 from tqdm import tqdm
@@ -16,7 +17,6 @@ from empfin.utils import nearest_psd
 
 
 # TODO models to implement
-#  Fama-Macbeth
 #  GMM
 #  GLS
 
@@ -614,3 +614,732 @@ class NonTradableFactors:
         var_g1 = sf * D + var_g0 * D @ C.T @ C @ D
 
         return var_g0, var_g1
+
+
+class FamaMacBeth:
+    """
+    References:
+        Fama, Eugene F., and James D. MacBeth (1973)
+        "Risk, Return, and Equilibrium: Empirical Tests"
+        Journal of Political Economy, 81(3), 607-636
+
+        Cochrane, John (2005)
+        "Asset Pricing: Revised Edition"
+        Chapter 12
+
+        Shanken, Jay (1992)
+        "On the Estimation of Beta-Pricing Models"
+        Review of Financial Studies, 5(1), 1-33
+
+        Petersen, Mitchell A. (2009)
+        "Estimating Standard Errors in Finance Panel Data Sets:
+        Comparing Approaches"
+        Review of Financial Studies, 22(1), 435-480
+    """
+
+    def __init__(self, assets, factors, cs_const=False, rolling_window=None, nw_lags=None, shanken=False):
+        """
+        Two-pass Fama-MacBeth (1973) estimator of factor risk premia.
+
+        First pass: for each asset, run a time-series regression of its excess
+        return on the factors with an intercept.
+
+        Second pass: at each period t, run a cross-sectional OLS regression of
+        that period's asset returns on the first-pass betas, optionally with
+        an intercept. The risk premium estimate for each factor is the
+        time-series mean of the cross-sectional slopes. Standard errors come
+        from the time-series variability of those slopes.
+
+        Defaults are the classical, unconditional, full-sample Fama-MacBeth
+        with no second-pass intercept and no errors-in-variables correction.
+
+        Parameters
+        ----------
+        assets: pandas.DataFrame
+            Timeseries of test asset excess returns, shape (T, N).
+
+        factors: pandas.DataFrame, pandas.Series
+            Timeseries of factor returns, shape (T, K). Index must match
+            `assets.index`.
+
+        cs_const: bool
+            If False (default), the cross-sectional second pass runs without
+            an intercept. If True, an intercept is included and a `'const'`
+            entry is added to `lambdas`, `lambdas_t`, and the other inference
+            series.
+
+        rolling_window: int, optional
+            If None (default), first-pass betas are estimated once over the
+            full sample. If an integer `w`, betas are re-estimated at each
+            t over the window `[t-w+1, t]` (inclusive, ending at t -- no
+            future data is used). The cross-section at time t then uses these
+            time-varying betas.
+
+        nw_lags: int, optional
+            If None (default), standard errors are the classical Fama-MacBeth
+            standard errors -- the time-series std dev (ddof=1) of the
+            cross-sectional slopes divided by sqrt(T_eff). If a non-negative
+            integer L, Newey-West HAC standard errors are computed on the
+            time series of cross-sectional slopes using L as the truncation
+            lag (Bartlett kernel).
+
+        shanken: bool
+            If False (default), no errors-in-variables correction is applied.
+            If True, all standard errors are multiplied by sqrt(1 + lambda'
+            Sigma_f^{-1} lambda), where lambda excludes the intercept (if
+            any) and Sigma_f is the sample covariance of the factors. The
+            correction composes with the chosen base variance (FM or
+            Newey-West).
+
+        Attributes
+        ----------
+        T: int
+            Length of the input sample.
+
+        N: int
+            Number of test assets.
+
+        K: int
+            Number of factors.
+
+        T_eff: int
+            Number of cross-sections that were actually fit (T if
+            `rolling_window is None`; otherwise T - rolling_window + 1, minus
+            any periods skipped due to too few valid assets or a singular
+            design matrix).
+
+        lambdas: pandas.Series
+            Risk premia estimates. Index is the factor names, prepended by
+            `'const'` when `cs_const=True`. Each element is the time-series
+            mean of the corresponding cross-sectional slope.
+
+        lambdas_se: pandas.Series
+            Standard errors of `lambdas`. Source depends on `nw_lags` and
+            `shanken`.
+
+        lambdas_tstat: pandas.Series
+            t-statistics: `lambdas / lambdas_se`.
+
+        lambdas_pvalue: pandas.Series
+            Two-sided p-values for `lambdas_tstat`, computed against the t
+            distribution with `T_eff - 1` degrees of freedom.
+
+        lambdas_t: pandas.DataFrame
+            Time series of cross-sectional regression slopes, shape
+            (T_eff, K) when `cs_const=False` and (T_eff, K+1) when
+            `cs_const=True`. This is the core object on which all
+            inference is based.
+
+        alphas_t: pandas.DataFrame
+            Time series of cross-sectional regression residuals (pricing
+            errors), shape (T_eff, N). Assets dropped from a particular
+            cross-section appear as NaN in that row.
+
+        betas: pandas.DataFrame
+            Full-sample first-pass betas, shape (K, N). Only set when
+            `rolling_window is None`.
+
+        betas_t: pandas.DataFrame
+            Rolling first-pass betas, with a MultiIndex (date, factor) on
+            the rows and asset names on the columns. Only set when
+            `rolling_window is not None`. Access the K x N betas at time t
+            via `betas_t.loc[t]`.
+
+        Notes
+        -----
+        The risk premium estimate is computed from the time series of
+        cross-sectional regressions, not from a single cross-sectional
+        regression on average returns. With fixed betas the two procedures
+        give the same point estimate but the latter yields incorrect
+        standard errors (Cochrane 2005, Ch. 12). For the convenience of
+        running the second pass on mean returns, see `CrossSectionReg`.
+
+        When `rolling_window=w`, the betas used in the cross-section at
+        time t are estimated from the w observations ending at t inclusive,
+        so the first w-1 cross-sections are skipped.
+
+        Newey-West (Petersen 2009) on the lambda time series corrects for
+        serial correlation in the cross-sectional slope estimates.
+        """
+        if isinstance(factors, pd.Series):
+            factors = factors.to_frame()
+        if isinstance(assets, pd.Series):
+            assets = assets.to_frame()
+
+        assert assets.index.equals(factors.index), \
+            "Indexes of `assets` and `factors` must be the same"
+
+        self.T = assets.shape[0]
+        self.N = assets.shape[1]
+        self.K = factors.shape[1]
+        self.ret_mean = assets.mean()
+
+        if self.T < self.K + 2:
+            raise ValueError(
+                f"T={self.T} too small for K={self.K} factors; need T >= K + 2"
+            )
+        min_N = self.K + 2 if cs_const else self.K + 1
+        if self.N < min_N:
+            raise ValueError(
+                f"N={self.N} too small for K={self.K} factors and "
+                f"cs_const={cs_const}; need N >= {min_N} for the cross-section "
+                f"to have positive degrees of freedom"
+            )
+
+        if rolling_window is not None:
+            if not isinstance(rolling_window, (int, np.integer)) or rolling_window <= 0:
+                raise ValueError(
+                    f"rolling_window must be a positive integer or None; got {rolling_window}"
+                )
+            if rolling_window < self.K + 2:
+                raise ValueError(
+                    f"rolling_window={rolling_window} too small for K={self.K} factors; "
+                    f"need rolling_window >= K + 2"
+                )
+            if self.T < rolling_window:
+                raise ValueError(
+                    f"T={self.T} too small for rolling_window={rolling_window}"
+                )
+
+        if nw_lags is not None:
+            if not isinstance(nw_lags, (int, np.integer)) or nw_lags < 0:
+                raise ValueError(
+                    f"nw_lags must be a non-negative integer or None; got {nw_lags}"
+                )
+
+        # First pass
+        if rolling_window is None:
+            self.betas = self._full_sample_betas(assets, factors)
+            beta_lookup = lambda t: self.betas
+            valid_dates = assets.index
+        else:
+            self.betas_t = self._rolling_betas(assets, factors, rolling_window)
+            beta_lookup = lambda t: self.betas_t.loc[t]
+            valid_dates = assets.index[rolling_window - 1:]
+
+        # Second pass
+        self.lambdas_t, self.alphas_t = self._cross_section(assets, beta_lookup, valid_dates, cs_const)
+        self.T_eff = self.lambdas_t.shape[0]
+
+        if self.T_eff < 2:
+            raise RuntimeError(
+                f"Only {self.T_eff} usable cross-section(s); cannot compute standard errors"
+            )
+
+        # Inference
+        self.lambdas = self.lambdas_t.mean()
+        self.lambdas.name = "Lambdas"
+
+        if nw_lags is None:
+            var = self.lambdas_t.var(ddof=1) / self.T_eff
+        else:
+            if nw_lags >= self.T_eff:
+                raise ValueError(
+                    f"nw_lags={nw_lags} must be less than T_eff={self.T_eff}"
+                )
+            var = self._newey_west_variance(self.lambdas_t, nw_lags)
+
+        if shanken:
+            Sigma_f = factors.cov().values
+            try:
+                Sigma_f_inv = inv(Sigma_f)
+            except np.linalg.LinAlgError as e:
+                raise RuntimeError(
+                    "Shanken correction failed: factor covariance matrix is singular"
+                ) from e
+            lambda_K = self.lambdas.drop('const', errors='ignore').values
+            self.shanken_factor = float(1.0 + lambda_K @ Sigma_f_inv @ lambda_K)
+            var = var * self.shanken_factor
+
+        self.lambdas_se = pd.Series(np.sqrt(var.values), index=self.lambdas.index, name="SE")
+        self.lambdas_tstat = pd.Series(
+            data=self.lambdas.values / self.lambdas_se.values,
+            index=self.lambdas.index,
+            name="t-stat",
+        )
+        dof = self.T_eff - 1
+        self.lambdas_pvalue = pd.Series(
+            data=2.0 * (1.0 - t_dist.cdf(np.abs(self.lambdas_tstat.values), df=dof)),
+            index=self.lambdas.index,
+            name="p-value",
+        )
+
+    def _full_sample_betas(self, assets, factors):
+        X = np.column_stack([np.ones(self.T), factors.values])  # T x (K+1)
+        x_has_nan = np.isnan(X).any(axis=1)
+        betas = np.full((self.K, self.N), np.nan)
+        for j, asst in enumerate(assets.columns):
+            y = assets[asst].values
+            mask = (~np.isnan(y)) & (~x_has_nan)
+            if mask.sum() < self.K + 2:
+                raise ValueError(
+                    f"Asset {asst!r} has only {mask.sum()} non-missing observations; "
+                    f"need at least K + 2 = {self.K + 2}"
+                )
+            Xj = X[mask]
+            yj = y[mask]
+            try:
+                coefs = solve(Xj.T @ Xj, Xj.T @ yj)
+            except np.linalg.LinAlgError as e:
+                raise RuntimeError(
+                    f"Singular first-pass design for asset {asst!r}"
+                ) from e
+            betas[:, j] = coefs[1:]
+        return pd.DataFrame(
+            data=betas,
+            index=factors.columns,
+            columns=assets.columns,
+        )
+
+    def _rolling_betas(self, assets, factors, w):
+        F = factors.values
+        A = assets.values
+        end_indices = range(w - 1, self.T)
+        end_dates = [assets.index[t] for t in end_indices]
+
+        blocks = []
+        for t in tqdm(end_indices, total=self.T - w + 1, desc="Rolling first-pass"):
+            X = np.column_stack([np.ones(w), F[t - w + 1:t + 1, :]])
+            Y = A[t - w + 1:t + 1, :]
+            beta_t = np.full((self.K, self.N), np.nan)
+            x_mask = ~np.isnan(X).any(axis=1)
+            for j in range(self.N):
+                y = Y[:, j]
+                mask = x_mask & ~np.isnan(y)
+                if mask.sum() < self.K + 2:
+                    continue
+                Xj = X[mask]
+                yj = y[mask]
+                try:
+                    coefs = solve(Xj.T @ Xj, Xj.T @ yj)
+                except np.linalg.LinAlgError:
+                    continue
+                beta_t[:, j] = coefs[1:]
+            blocks.append(beta_t)
+
+        multi_idx = pd.MultiIndex.from_product(
+            [end_dates, list(factors.columns)],
+            names=[assets.index.name or "date", "factor"],
+        )
+        return pd.DataFrame(
+            data=np.vstack(blocks),
+            index=multi_idx,
+            columns=assets.columns,
+        )
+
+    def _cross_section(self, assets, beta_lookup, valid_dates, cs_const):
+        K = self.K
+        N = self.N
+        asset_names = list(assets.columns)
+        factor_names = list(beta_lookup(valid_dates[0]).index)
+        param_names = (["const"] + factor_names) if cs_const else factor_names
+        min_assets = K + 2 if cs_const else K + 1
+
+        lambdas_rows = []
+        alphas_rows = []
+        used_dates = []
+        for t in valid_dates:
+            beta_t = beta_lookup(t).values  # K x N
+            r_t = assets.loc[t].values  # N
+            mask = (~np.isnan(r_t)) & (~np.isnan(beta_t).any(axis=0))
+            if mask.sum() < min_assets:
+                warnings.warn(
+                    f"Skipping cross-section at {t}: only {int(mask.sum())} valid asset(s); "
+                    f"need at least {min_assets}",
+                    RuntimeWarning,
+                )
+                continue
+            r_valid = r_t[mask]
+            b_valid = beta_t[:, mask]
+            if cs_const:
+                X = np.column_stack([np.ones(mask.sum()), b_valid.T])  # n_valid x (K+1)
+            else:
+                X = b_valid.T  # n_valid x K
+            try:
+                coefs = solve(X.T @ X, X.T @ r_valid)
+            except np.linalg.LinAlgError:
+                warnings.warn(
+                    f"Skipping cross-section at {t}: singular design matrix",
+                    RuntimeWarning,
+                )
+                continue
+            resid_full = np.full(N, np.nan)
+            resid_full[mask] = r_valid - X @ coefs
+            lambdas_rows.append(coefs)
+            alphas_rows.append(resid_full)
+            used_dates.append(t)
+
+        if not used_dates:
+            raise RuntimeError("No usable cross-sections; cannot estimate risk premia")
+
+        idx = pd.Index(used_dates, name=assets.index.name)
+        lambdas_t = pd.DataFrame(
+            data=np.array(lambdas_rows),
+            index=idx,
+            columns=param_names,
+        )
+        alphas_t = pd.DataFrame(
+            data=np.array(alphas_rows),
+            index=idx,
+            columns=asset_names,
+        )
+        return lambdas_t, alphas_t
+
+    @staticmethod
+    def _newey_west_variance(lambdas_t, L):
+        """
+        Newey-West (Bartlett-kernel) HAC variance of the sample mean for
+        each column of `lambdas_t`. Returns a pandas.Series of variances.
+        """
+        T_eff = lambdas_t.shape[0]
+        x = lambdas_t.values - lambdas_t.values.mean(axis=0, keepdims=True)
+        gamma0 = (x * x).sum(axis=0) / T_eff
+        s2 = gamma0.copy()
+        for l in range(1, L + 1):
+            w_l = 1.0 - l / (L + 1)
+            cov_l = (x[l:] * x[:-l]).sum(axis=0) / T_eff
+            s2 = s2 + 2.0 * w_l * cov_l
+        return pd.Series(s2 / T_eff, index=lambdas_t.columns)
+
+    def _average_betas(self):
+        """
+        K x N DataFrame of betas for plotting/prediction. For full-sample
+        FM this is just `self.betas`; for rolling FM it is the time-average
+        of `self.betas_t` across dates, restored to the canonical factor
+        order from `self.lambdas`.
+        """
+        if hasattr(self, "betas"):
+            return self.betas
+        factor_order = self.lambdas.drop("const", errors="ignore").index
+        return self.betas_t.groupby(level="factor").mean().reindex(factor_order)
+
+    def plot_alpha_pred(
+            self,
+            size=6,
+            title=None,
+            save_path=None,
+            color1="tab:blue",
+            color2="tab:orange",
+    ):
+        """
+        Plots the time-averaged pricing errors and the risk premia together
+        with their 95% confidence intervals, and compares the predicted
+        average return with the realized average returns.
+
+        Time-averaged alphas use the cross-section by cross-section
+        residuals: alpha_i = mean_t(alphas_t[t, i]) with FM-style standard
+        error std_t(alphas_t[t, i]) / sqrt(T_eff_i). Lambdas use the
+        standard errors already in `lambdas_se` (FM, Newey-West, or
+        Shanken-corrected, depending on construction). For rolling FM, the
+        scatter uses time-averaged betas.
+
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        color1: str
+            Primary color of the chart
+
+        color2: str
+            Secondary color of the chart
+        """
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        if title is not None:
+            plt.suptitle(title)
+
+        # Time-averaged alphas with their CIs
+        alpha_mean = self.alphas_t.mean()
+        alpha_se = self.alphas_t.std(ddof=1) / np.sqrt(self.alphas_t.count())
+
+        ax = plt.subplot2grid((2, 2), (0, 0))
+        ax.set_title(r"$\alpha$ and their CI")
+        ax = alpha_mean.plot(kind='bar', ax=ax, width=0.9, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            alpha_mean.values,
+            yerr=alpha_se.values * 1.96,
+            ls='none',
+            ecolor=color2,
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        # Lambdas (excluding the intercept, if any) with their CIs
+        lambdas = self.lambdas.drop('const', errors='ignore')
+        lambdas_se = self.lambdas_se.drop('const', errors='ignore')
+
+        ax = plt.subplot2grid((2, 2), (1, 0))
+        ax.set_title(r"$\lambda$ and their CI")
+        ax = lambdas.plot(kind='bar', ax=ax, width=0.9, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            lambdas.values,
+            yerr=lambdas_se.values * 1.96,
+            ls='none',
+            ecolor=color2,
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        # Predicted VS actual average returns
+        ax = plt.subplot2grid((2, 2), (0, 1), rowspan=2)
+        betas_for_pred = self._average_betas()
+        predicted = self.lambdas.get('const', default=0) + betas_for_pred.T @ lambdas
+
+        ax.scatter(predicted, self.ret_mean, label="Test Assets", color=color1)
+        ax.axline((0, 0), (1, 1), color=color2, ls="--", label="45 Degree Line")
+        ax.axhline(0, color="black", lw=0.5)
+        ax.axvline(0, color="black", lw=0.5)
+        ax.set_xlabel(r"Predicted Average Return $\beta_i^{\prime} \lambda$ (no $\alpha$)")
+        ax.set_ylabel(r"Realized Average Return $E(r_i)$")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="upper left")
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
+
+    def plot_lambdas_timeseries(
+            self,
+            size=4,
+            title=None,
+            save_path=None,
+            color1="tab:blue",
+            color2="tab:orange",
+    ):
+        """
+        Plots the time series of cross-sectional regression slopes
+        `lambda_t` (one panel per coefficient, including the intercept),
+        overlaid with the Fama-MacBeth point estimate as a horizontal
+        reference. The panel title reports the point estimate and t-stat.
+
+        Parameters
+        ----------
+        size: float
+            Relative subplot size
+
+        title: str, optional
+            Overall figure title
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        color1: str
+            Color of the lambda_t time series
+
+        color2: str
+            Color of the Fama-MacBeth mean reference line
+        """
+        cols = list(self.lambdas_t.columns)
+        n = len(cols)
+        fig, axes = plt.subplots(
+            n,
+            1,
+            figsize=(size * (16 / 7.3), size * n / 1.6),
+            sharex=True,
+        )
+        if n == 1:
+            axes = [axes]
+        if title is not None:
+            fig.suptitle(title)
+
+        for ax, name in zip(axes, cols):
+            series = self.lambdas_t[name]
+            mean_val = self.lambdas[name]
+            t_val = self.lambdas_tstat[name]
+            ax.plot(
+                series.index,
+                series.values,
+                color=color1,
+                lw=0.8,
+                label=r"$\lambda_t$",
+            )
+            ax.axhline(
+                mean_val,
+                color=color2,
+                ls="--",
+                lw=1.0,
+                label=r"$\hat{\lambda}$",
+            )
+            ax.axhline(0, color="black", lw=0.5)
+            ax.set_title(rf"{name}: $\hat{{\lambda}}$ = {mean_val:.3f} (t = {t_val:.2f})")
+            ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+            ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        axes[0].legend(frameon=True, loc="best")
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
+
+    def plot_lambdas_hist(
+            self,
+            size=6,
+            bins=None,
+            title=None,
+            save_path=None,
+            color1="tab:blue",
+            color2="tab:orange",
+    ):
+        """
+        Plots the histogram of the cross-sectional slopes `lambda_t` for
+        each coefficient. The Fama-MacBeth point estimate is overlaid as a
+        dashed vertical line.
+
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        bins: int, optional
+            Number of histogram bins. If None, defaults to
+            `max(10, min(50, int(sqrt(T_eff))))`.
+
+        title: str, optional
+            Overall figure title
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        color1: str
+            Color of the histogram bars
+
+        color2: str
+            Color of the Fama-MacBeth mean reference line
+        """
+        if bins is None:
+            bins = max(10, min(50, int(np.sqrt(self.T_eff))))
+
+        axes = self.lambdas_t.hist(
+            density=True,
+            bins=bins,
+            figsize=(size * (16 / 7.3), size),
+            color=color1,
+            grid=False,
+        )
+        axes_flat = np.array(axes).flatten()
+
+        for ax in axes_flat:
+            name = ax.get_title()
+            if name in self.lambdas.index:
+                ax.axvline(
+                    self.lambdas[name],
+                    color=color2,
+                    ls="--",
+                    lw=1.5,
+                    label=r"$\hat{\lambda}$",
+                )
+                ax.axvline(0, color="black", lw=0.5)
+            ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+            ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        axes_flat[0].legend(frameon=True, loc="best")
+        if title is not None:
+            plt.suptitle(title)
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
+
+    def plot_betas_hist(
+            self,
+            size=6,
+            bins=None,
+            title=None,
+            save_path=None,
+            color1="tab:blue",
+            color2="tab:orange",
+    ):
+        """
+        Plots the histogram of the first-pass betas for each factor. In
+        full-sample mode each panel contains N observations (one per test
+        asset); in rolling-window mode each panel contains T_eff * N
+        observations (across dates and assets). The cross-sectional mean of
+        the betas is overlaid as a dashed vertical line.
+
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        bins: int, optional
+            Number of histogram bins. If None, defaults to
+            `max(10, min(50, int(sqrt(n_obs))))`, where `n_obs` is the number
+            of beta observations per factor.
+
+        title: str, optional
+            Overall figure title
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        color1: str
+            Color of the histogram bars
+
+        color2: str
+            Color of the cross-sectional mean reference line
+        """
+        if hasattr(self, "betas"):
+            # Full sample: rows = asset, columns = factor.
+            betas_long = self.betas.T
+        else:
+            # Rolling: stack assets into the row index, then unstack factor
+            # into the columns. Result: rows = (date, asset), columns = factor.
+            betas_long = self.betas_t.stack().unstack(level="factor")
+            factor_order = self.lambdas.drop("const", errors="ignore").index
+            betas_long = betas_long.reindex(columns=factor_order)
+
+        if bins is None:
+            n_obs = betas_long.shape[0]
+            bins = max(10, min(50, int(np.sqrt(n_obs))))
+
+        axes = betas_long.hist(
+            density=True,
+            bins=bins,
+            figsize=(size * (16 / 7.3), size),
+            color=color1,
+            grid=False,
+        )
+        axes_flat = np.array(axes).flatten()
+        means = betas_long.mean()
+
+        for ax in axes_flat:
+            name = ax.get_title()
+            if name in means.index:
+                ax.axvline(
+                    means[name],
+                    color=color2,
+                    ls="--",
+                    lw=1.5,
+                    label=r"$\bar{\beta}$",
+                )
+                ax.axvline(0, color="black", lw=0.5)
+            ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+            ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        axes_flat[0].legend(frameon=True, loc="best")
+        if title is not None:
+            plt.suptitle(title)
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
