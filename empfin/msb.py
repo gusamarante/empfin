@@ -781,6 +781,60 @@ class ConditionalRiskPremiaTermStructure:
             plt.show()
         plt.close()
 
+    def plot_premia_medians(
+            self,
+            horizons=(0, 4, 8, 12),
+            size=4,
+            title=r"Time-varying term structure of risk premia, medians of $\lambda_{g,t}^{S}$",
+            save_path=None,
+            show_chart=True,
+    ):
+        """
+        Plots the posterior-median time-varying risk premium for each horizon
+        in `horizons`, overlaid on a single axis.
+
+        Parameters
+        ----------
+        horizons: iterable of int
+            Horizons `S` (0-indexed) to plot. Each must lie in `[0, s_bar]`.
+
+        size: float
+            Relative size of the chart. Aspect ratio is constant at 16 / 7.3.
+
+        title: str
+            Title of the chart.
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        show_chart: bool
+            If True, shows the chart. If False, it still saves the chart to
+            `save_path`.
+        """
+        horizons = [h for h in horizons if 0 <= h <= self.s_bar]
+        if len(horizons) == 0:
+            raise ValueError("No valid horizons in `horizons`")
+
+        median = np.median(self.draws_lambda_g, axis=0)
+
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        ax = plt.subplot2grid((1, 1), (0, 0))
+        for S in horizons:
+            ax.plot(self.lambda_g_dates, median[:, S], lw=1.5, label=S)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set(title=title, xlabel="date", ylabel=r"$\lambda_{g,t}^{S}$")
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="best", ncol=len(horizons))
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        if show_chart:
+            plt.show()
+        plt.close()
+
     def plot_premia_term_structure(
             self,
             t=None,
@@ -849,6 +903,8 @@ class ConditionalRiskPremiaTermStructure:
         plt.close()
 
     def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None, show_chart=True):
+        # TODO Review
+        # TODO Documentation
         df = pd.DataFrame(
             data=self.draws_loadings.median().values.reshape(self.n, self.k),
             columns=[k + 1 for k in range(self.k)],
