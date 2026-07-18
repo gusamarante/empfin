@@ -179,6 +179,7 @@ class RiskPremiaTermStructure:
             x_axis_title=r"$S$",
             save_path=None,
             show_chart=True,
+            color="tab:blue",
     ):
         """
         Plots the unconditional risk premia term structure. The point estimate
@@ -206,16 +207,19 @@ class RiskPremiaTermStructure:
         show_chart: bool
             If True, shows the chart. If False, it still saves the chart to
             `save_path`.
+
+        color: str
+            Color of the median line and credible interval shading
         """
         plt.figure(figsize=(size * (16 / 7.3), size))
         ax = plt.subplot2grid((1, 1), (0, 0))
-        ax.plot(self.draws_lambda_g.median(), label="median", color="tab:blue")
+        ax.plot(self.draws_lambda_g.median(), label="median", color=color)
         ax.fill_between(
             self.draws_lambda_g.columns,
             self.draws_lambda_g.quantile((1 - ci) / 2),
             self.draws_lambda_g.quantile((1 + ci) / 2),
             label=f"{round(100 * ci)}% Credible Interval",
-            color="tab:blue",
+            color=color,
             alpha=0.2,
             lw=0,
         )
@@ -550,7 +554,6 @@ class ConditionalRiskPremiaTermStructure:
         ) = self._run_conditional_gibbs()
 
     def factor_mimicking_portfolio(self, S):
-        # TODO Review this
         r"""
         Horizon-specific factor-mimicking portfolio for the conditional
         model (Proposition 2 of Amarante and Soares "Macro Takes Time").
@@ -708,6 +711,7 @@ class ConditionalRiskPremiaTermStructure:
             title=r"Time-varying term structure of risk premia $\lambda_{g,t}^{S}$",
             save_path=None,
             show_chart=True,
+            color="tab:blue",
     ):
         """
         Plots the time-varying risk premium for each horizon in `horizons`.
@@ -736,6 +740,9 @@ class ConditionalRiskPremiaTermStructure:
 
         show_chart: bool
             Whether to display the chart after saving.
+
+        color: str
+            Color of the median line and credible interval shading
         """
         horizons = [h for h in horizons if 0 <= h <= self.s_bar]
         if len(horizons) == 0:
@@ -758,12 +765,12 @@ class ConditionalRiskPremiaTermStructure:
         upper = np.quantile(self.draws_lambda_g, (1 + ci) / 2, axis=0)
 
         for ax, S in zip(axes, horizons):
-            ax.plot(self.lambda_g_dates, median[:, S], color="tab:blue", label="median")
+            ax.plot(self.lambda_g_dates, median[:, S], color=color, label="median")
             ax.fill_between(
                 self.lambda_g_dates,
                 lower[:, S],
                 upper[:, S],
-                color="tab:blue",
+                color=color,
                 alpha=0.2,
                 lw=0,
                 label=f"{round(100 * ci)}% CI",
@@ -844,6 +851,7 @@ class ConditionalRiskPremiaTermStructure:
             x_axis_title=r"$S$",
             save_path=None,
             show_chart=True,
+            color="tab:blue",
     ):
         """
         Plots the term structure of risk premia at conditioning time `t`,
@@ -857,6 +865,30 @@ class ConditionalRiskPremiaTermStructure:
             `lambda_g_dates`), that row is used. If a label, it is matched
             against `lambda_g_dates`. If None, defaults to the most recent
             available conditioning time.
+
+        ci: float
+            Size of the credibility intervals
+
+        size: float
+            Relative size of the chart. Aspect ratio is constant at 16 / 7.3
+
+        title: str
+            Title of the chart. If None, defaults to
+            r"$\lambda_{g,t}^{S}$ at t = {label}".
+
+        x_axis_title: str
+            Title of the x-axis
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        show_chart: bool
+            If True, shows the chart. If False, it still saves the chart to
+            `save_path`.
+
+        color: str
+            Color of the median line and credible interval shading
         """
         if t is None:
             t_idx = len(self.lambda_g_dates) - 1
@@ -879,12 +911,12 @@ class ConditionalRiskPremiaTermStructure:
 
         plt.figure(figsize=(size * (16 / 7.3), size))
         ax = plt.subplot2grid((1, 1), (0, 0))
-        ax.plot(horizons, median, color="tab:blue", label="median")
+        ax.plot(horizons, median, color=color, label="median")
         ax.fill_between(
             horizons,
             lower,
             upper,
-            color="tab:blue",
+            color=color,
             alpha=0.2,
             lw=0,
             label=f"{round(100 * ci)}% Credible Interval",
@@ -903,8 +935,23 @@ class ConditionalRiskPremiaTermStructure:
         plt.close()
 
     def plot_loadings_heatmap(self, figsize=(5 * (16 / 7.3), 5), save_path=None, show_chart=True):
-        # TODO Review
-        # TODO Documentation
+        """
+        Plots a heatmap of the posterior-median factor loadings, with assets on
+        the rows and latent factors on the columns.
+
+        Parameters
+        ----------
+        figsize: tuple
+            Overall size of the figure
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        show_chart: bool
+            If True, shows the chart. If False, it still saves the chart to
+            `save_path`.
+        """
         df = pd.DataFrame(
             data=self.draws_loadings.median().values.reshape(self.n, self.k),
             columns=[k + 1 for k in range(self.k)],
