@@ -18,7 +18,6 @@ from empfin.utils import nearest_psd
 
 # TODO models to implement
 #  GMM
-#  GLS
 
 
 class TimeseriesReg:
@@ -1338,6 +1337,353 @@ class FamaMacBeth:
         axes_flat[0].legend(frameon=True, loc="best")
         if title is not None:
             plt.suptitle(title)
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
+
+
+class GLS:
+    """
+    References:
+        Cochrane, John.
+        Asset Pricing: Revised Edition (2005)
+        Chapter 12.2, page 238
+    """
+
+    def __init__(self, assets, factors, cs_const=False, factors_as_assets=False, jitter=1e-8):
+        """
+        GLS cross-sectional regression estimator of factor risk premia.
+
+        Like `CrossSectionReg`, this model can be used whether the factors are
+        tradeable or not. It differs only in the second stage: since the
+        residuals of the cross-sectional regression are correlated with each
+        other, a GLS regression is run using the residual covariance matrix
+        Sigma as the error covariance, which improves efficiency.
+
+        First, betas are estimated with a linear model using time series
+        regressions
+
+            r_i = a_i + beta_i * f + eps_i
+
+        Then the factor risk premia are estimated from a GLS regression across
+        assets of average returns on the betas, using Sigma = cov(eps) as the
+        error covariance matrix (Cochrane 2005, equation 12.15)
+
+            E(r_i) = (const + ) beta_i * lambda + alpha_i
+            lambda = (beta' Sigma^-1 beta)^-1 beta' Sigma^-1 E(r)
+            alpha  = E(r) - beta' lambda
+
+        Following Cochrane's derivation, the beta * Sigma_f * beta' term of the
+        full error covariance E(alpha alpha') = (Sigma + beta Sigma_f beta') / T
+        is dropped because it does not affect the estimate.
+
+        Parameters
+        ----------
+        assets: pandas.DataFrame
+            timeseries of test assets returns
+
+        factors: pandas.DataFrame
+            timeseries of the factors
+
+        cs_const: bool
+            If True, adds a constant to the second-stage cross-sectional GLS
+            regression. A `'const'` entry is then added to `lambdas`. As in
+            `CrossSectionReg`, the reported covariance matrices are computed
+            from the factor betas only (the `'const'` column is not included in
+            `conv_cov_lambda_hat` / `shanken_cov_lambda_hat`).
+
+        factors_as_assets: bool
+            If True, the factor portfolios themselves are appended to the test
+            assets before the first stage (factors already present among the
+            assets are not duplicated). Regressing a factor on the factors is a
+            perfect fit, so its first-stage residual variance is exactly zero
+            and the GLS weighting matrix Sigma loses rank. In that case a small
+            diagonal loading (see `jitter`) is added so Sigma stays invertible.
+            The effect is that the factor test assets receive very large GLS
+            weights, forcing the cross-sectional line to pass through them.
+
+        jitter: float
+            Relative diagonal loading added to the GLS weighting matrix when it
+            is (near-)singular. The absolute amount added to the diagonal of
+            Sigma is `jitter * max_eigenvalue(Sigma)`, so the regularization
+            scales with the data. Smaller values force the line through the
+            factor test assets more strongly (at the cost of a worse-conditioned
+            inverse). Only applied when Sigma is detected to be near-singular,
+            which typically only happens when `factors_as_assets=True`.
+
+        Attributes
+        ----------
+        T: int
+            timeseries sample size
+
+        N: int
+            number of test assets (including the appended factor test assets
+            when `factors_as_assets=True`)
+
+        K: int
+            number of factors
+
+        cs_const: bool
+            Whether a constant was included in the second stage
+
+        factors_as_assets: bool
+            Whether the factors were appended to the test assets
+
+        jitter: float
+            Absolute diagonal loading actually added to Sigma to make it
+            invertible (0.0 when no regularization was needed)
+
+        ret_mean: pandas.Series
+            historical average returns of the test assets, the left-hand-side
+            variable of the cross-sectional regression
+
+        betas: pandas.DataFrame
+            First-pass betas, shape (K, N)
+
+        Sigma: pandas.DataFrame
+            GLS weighting matrix: the covariance matrix of the residuals from
+            the first-pass time series regressions, regularized with `jitter`
+            on the diagonal when it would otherwise be singular
+
+        Omega: pandas.DataFrame
+            Covariance matrix of the factors (Sigma_f)
+
+        lambdas: pandas.Series
+            GLS risk premia estimates, prepended by `'const'` when
+            `cs_const=True`
+
+        alphas: pandas.Series
+            GLS pricing errors
+
+        conv_cov_lambda_hat: pandas.DataFrame
+            Conventional (standard regression) covariance matrix of the risk
+            premia, Cochrane (2005) equation 12.16
+
+        conv_cov_alpha_hat: pandas.DataFrame
+            Conventional covariance matrix of the pricing errors, Cochrane
+            (2005) equation 12.17
+
+        shanken_factor: float
+            Errors-in-variables multiplicative correction 1 + lambda'
+            Sigma_f^-1 lambda, Shanken (1992)
+
+        shanken_cov_lambda_hat: pandas.DataFrame
+            Shanken-corrected covariance matrix of the risk premia, Cochrane
+            (2005) equation 12.19 (GLS line)
+
+        shanken_cov_alpha_hat: pandas.DataFrame
+            Shanken-corrected covariance matrix of the pricing errors, Cochrane
+            (2005) equation 12.21
+        """
+        if isinstance(assets, pd.Series):
+            assets = assets.to_frame()
+        if isinstance(factors, pd.Series):
+            factors = factors.to_frame()
+
+        self.cs_const = cs_const
+        self.factors_as_assets = factors_as_assets
+
+        # Optionally use the factor portfolios themselves as test assets. Only
+        # append factors that are not already among the assets, to avoid
+        # duplicate columns.
+        if factors_as_assets:
+            extra = [c for c in factors.columns if c not in assets.columns]
+            if extra:
+                assets = pd.concat([assets, factors[extra]], axis=1)
+
+        self.ret_mean = assets.mean()
+
+        # First stage is the timeseries regression
+        ts_reg = TimeseriesReg(assets, factors)
+        self.T = ts_reg.T
+        self.N = ts_reg.N
+        self.K = ts_reg.K
+        self.betas = ts_reg.params.drop('alpha')
+        self.Omega = ts_reg.Omega  # Factor Covariance
+
+        # GLS weighting matrix. When a factor is used as a test asset its
+        # first-stage residual variance is exactly zero, so Sigma is singular.
+        # Add a small scale-aware diagonal loading so that its inverse exists.
+        S = ts_reg.Sigma.values  # N x N
+        eigvals = np.linalg.eigvalsh(S)
+        max_eig = eigvals.max()
+        if eigvals.min() <= 1e-10 * max_eig:
+            self.jitter = jitter * max_eig
+            S = S + self.jitter * np.eye(self.N)
+        else:
+            self.jitter = 0.0
+        self.Sigma = pd.DataFrame(S, index=ts_reg.Sigma.index, columns=ts_reg.Sigma.columns)
+
+        # 2nd stage - GLS cross-sectional regression
+        # Cochrane (2005) equation 12.15
+        b = self.betas.T.values  # N x K
+        O = self.Omega.values  # K x K
+        er = self.ret_mean.values  # N
+        S_inv = inv(S)
+
+        # Design matrix of the point estimate, with the constant when requested
+        if cs_const:
+            X = np.column_stack([np.ones(self.N), b])  # N x (K+1)
+            lambda_index = pd.Index(['const']).append(self.betas.index)
+        else:
+            X = b  # N x K
+            lambda_index = self.betas.index
+
+        lhat = inv(X.T @ S_inv @ X) @ X.T @ S_inv @ er
+        self.lambdas = pd.Series(
+            data=lhat,
+            index=lambda_index,
+            name="Lambdas",
+        )
+        self.alphas = pd.Series(
+            data=er - X @ lhat,
+            index=self.betas.columns,
+            name="Alphas",
+        )
+
+        # Covariance matrices. As in `CrossSectionReg`, these use only the
+        # factor betas (the constant, if any, is dropped from the lambda
+        # covariance).
+        factor_index = self.betas.index
+        A = inv(b.T @ S_inv @ b)  # (beta' Sigma^-1 beta)^-1, K x K
+
+        # Conventional GLS estimator covariance matrices
+        # Equations 12.16 and 12.17 of Cochrane (2005)
+        self.conv_cov_lambda_hat = pd.DataFrame(
+            data=(1 / self.T) * (A + O),
+            index=factor_index,
+            columns=factor_index,
+        )
+        self.conv_cov_alpha_hat = pd.DataFrame(
+            data=nearest_psd(  # Rank deficient, may need PSD projection
+                (1 / self.T) * (S - b @ A @ b.T)
+            ),
+            index=self.betas.columns,
+            columns=self.betas.columns,
+        )
+
+        # Shanken correction for the fact that betas are estimated
+        # Equations 12.19 and 12.21 of Cochrane (2005)
+        lhat_factors = self.lambdas.drop('const', errors='ignore').values
+        self.shanken_factor = 1 + lhat_factors.T @ inv(O) @ lhat_factors
+
+        self.shanken_cov_lambda_hat = pd.DataFrame(
+            data=(1 / self.T) * (self.shanken_factor * A + O),
+            index=factor_index,
+            columns=factor_index,
+        )
+        self.shanken_cov_alpha_hat = self.conv_cov_alpha_hat * self.shanken_factor
+
+    def grs_test(self):
+        """
+        Tests the null hypothesis that all pricing errors are jointly equal to
+        zero.
+
+        Returns
+        -------
+        grs: float
+            test statistic
+
+        pvalue: float
+            p-value of the test statistic
+
+        Notes
+        -----
+        Equation 12.22 from Cochrane (2005), the Shanken-corrected version of
+        equation 12.18 that accounts for the fact that the betas are estimated.
+        The clean quadratic form in Sigma^-1 is used instead of a generalized
+        inverse of the (rank-deficient) pricing-error covariance matrix. The
+        degrees of freedom drop by one more when a constant is included in the
+        cross-section.
+        """
+        S_inv = inv(self.Sigma.values)
+        a = self.alphas.values
+        grs = (self.T / self.shanken_factor) * (a.T @ S_inv @ a)
+        dof = self.N - self.K - int(self.cs_const)
+        pvalue = 1 - chi2.cdf(grs, dof)
+        return grs, pvalue
+
+    def plot_alpha_pred(
+            self,
+            size=6,
+            title=None,
+            save_path=None,
+            color1="tab:blue",
+            color2="tab:orange",
+    ):
+        """
+        Plots the alphas and lambdas together with their confidence intervals,
+        and compares the average return predicted by the model with the
+        realized average returns.
+
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        color1: str
+            Primary color of the chart
+
+        color2: str
+            Secondary color of the chart
+        """
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        if title is not None:
+            plt.suptitle(title)
+
+        # Alphas
+        ax = plt.subplot2grid((2, 2), (0, 0))
+        ax.set_title(r"$\alpha$ and their CI")
+        ax = self.alphas.plot(kind='bar', ax=ax, width=0.9, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            self.alphas.values,
+            yerr=np.sqrt(np.diag(self.shanken_cov_alpha_hat)) * 1.96,
+            ls='none',
+            ecolor=color2,
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        # lambdas (excluding the intercept, if any) with their CIs
+        lambdas = self.lambdas.drop('const', errors='ignore')
+        ax = plt.subplot2grid((2, 2), (1, 0))
+        ax.set_title(r"$\lambda$ and their CI")
+        ax = lambdas.plot(kind='bar', ax=ax, width=0.9, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.errorbar(
+            ax.get_xticks(),
+            lambdas.values,
+            yerr=np.sqrt(np.diag(self.shanken_cov_lambda_hat)) * 1.96,
+            ls='none',
+            ecolor=color2,
+        )
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        # Predicted VS actual average returns
+        ax = plt.subplot2grid((2, 2), (0, 1), rowspan=2)
+        predicted = self.lambdas.get('const', default=0) + self.betas.T @ lambdas
+        ax.scatter(predicted, self.ret_mean, label="Test Assets", color=color1)
+        ax.axline((0, 0), (1, 1), color=color2, ls="--", label="45 Degree Line")
+        ax.axhline(0, color="black", lw=0.5)
+        ax.axvline(0, color="black", lw=0.5)
+        ax.set_xlabel(r"Predicted Average Return $\beta_i^{\prime} \lambda$ (no $\alpha$)")
+        ax.set_ylabel(r"Realized Average Return $E(r_i)$")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.legend(frameon=True, loc="upper left")
+
         plt.tight_layout()
         if save_path is not None:
             plt.savefig(save_path)
