@@ -365,8 +365,6 @@ class CrossSectionReg:
             if extra:
                 assets = pd.concat([assets, factors[extra]], axis=1)
 
-        self.avg_ret = assets.mean()
-
         # First stage is the timeseries regression
         ts_reg = TimeseriesReg(assets, factors)
         self.T = ts_reg.T
@@ -393,7 +391,7 @@ class CrossSectionReg:
         # 2nd stage - cross-sectional regression
         b = self.betas.T.values  # N x K (factor betas only)
         O = self.Omega.values  # K x K
-        er = self.avg_ret.values  # N
+        er = self.ret_mean.values  # N
 
         # Design matrix, with the constant as the first column when requested
         if cs_const:

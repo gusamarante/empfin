@@ -873,8 +873,7 @@ class ConditionalRiskPremiaTermStructure:
             Relative size of the chart. Aspect ratio is constant at 16 / 7.3
 
         title: str
-            Title of the chart. If None, defaults to
-            r"$\lambda_{g,t}^{S}$ at t = {label}".
+            Title of the chart.
 
         x_axis_title: str
             Title of the x-axis
