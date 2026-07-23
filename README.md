@@ -4,7 +4,7 @@
 # What's Inside
 Currently available models for estimation of risk premia:
 - `TimeseriesReg`: single-pass OLS time-series regression, described in [Cochrane (2005)](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6), Section 12.1
-- `CrossSectionReg`: two-pass cross-sectional regression, described in [Cochrane (2005)](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6), Section 12.2
+- `CrossSectionReg`: two-pass cross-sectional regression, described in [Cochrane (2005)](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6), Section 12.2. Includes options for OLS and GLS estimators.
 - `NonTradableFactors`: iterative maximum-likelihood estimator for non-tradable factors, described in [Campbell, Lo & MacKinlay (2012)](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019), Section 6.2.3
 - `FamaMacBeth`: classical two-pass Fama-MacBeth regression, with optional rolling-window first pass, Newey-West HAC standard errors, and Shanken (1992) errors-in-variables correction, from [Fama & MacBeth (1973)](https://doi.org/10.1086/260061)
 - `RiskPremiaTermStructure`: term structure of risk premia with a single factor, tradable or not, following [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696). I would like to thank the authors for sharing their replication files.
