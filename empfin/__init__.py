@@ -13,6 +13,7 @@ from empfin.data_readers import (
 from empfin.bfm import BFM, BFMGLS, BFMOMIT
 from empfin.classics import CrossSectionReg, FamaMacBeth, NonTradableFactors, TimeseriesReg
 from empfin.msb import ConditionalRiskPremiaTermStructure, RiskPremiaTermStructure
+from empfin.prinport import PrincipalPortfolios, PrincipalPortfoliosBacktest, momentum_signal
 
 __all__ = [
     "BFM",
@@ -22,11 +23,14 @@ __all__ = [
     "CrossSectionReg",
     "FamaMacBeth",
     "NonTradableFactors",
+    "PrincipalPortfolios",
+    "PrincipalPortfoliosBacktest",
     "RiskPremiaTermStructure",
     "TimeseriesReg",
     "bond_futures",
     "ff25p",
     "ff5f",
+    "momentum_signal",
     "msb_conditional_replication",
     "msb_replication",
     "plot_correlogram",

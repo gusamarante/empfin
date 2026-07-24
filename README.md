@@ -13,6 +13,9 @@ Currently available models for estimation of risk premia:
   - `BFM`: Bayesian Fama-MacBeth (BFM-OLS), which replaces the two-pass point estimates with a posterior distribution over the risk premia
   - `BFMGLS`: GLS variant of the Bayesian Fama-MacBeth, which uses the idiosyncratic-error precision matrix in the cross-sectional step
   - `BFMOMIT`: variant of the Bayesian Fama-MacBeth that is robust to omitted factors by projecting onto the principal components of the asset-return covariance
+- Principal Portfolios from [Kelly, Malamud & Pedersen (2023)](https://doi.org/10.1111/jofi.13199), which use all assets' signals to predict each asset's return through the prediction matrix, and decompose the optimal strategy into exposure (PEP) and alpha (PAP) components:
+  - `PrincipalPortfolios`: full-sample estimation of the prediction matrix and its principal portfolio decompositions
+  - `PrincipalPortfoliosBacktest`: out-of-sample rolling-window backtest of the principal portfolio strategies
 
 # Examples
 For each model, there is a jupyter notebook with [examples](https://github.com/gusamarante/empfin/tree/main/examples) of their use.
@@ -32,6 +35,8 @@ Cochrane (2005) ["_Asset Pricing: Revised Edition_"](https://press.princeton.edu
 Campbell, Lo, and MacKinlay (2012) ["_The Econometrics of Financial Markets_"](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019)
 
 Fama and MacBeth (1973) ["_Risk, Return, and Equilibrium: Empirical Tests_"](https://doi.org/10.1086/260061) Journal of Political Economy, 81(3), 607-636
+
+Kelly, Malamud, and Pedersen (2023) ["_Principal Portfolios_"](https://doi.org/10.1111/jofi.13199) The Journal of Finance, 78(1), 347-387
 
 # Library Citation
 > Gustavo Amarante (2026). empfin - Empirical Finance Tools in Python. Retrieved from https://github.com/gusamarante/empfin
