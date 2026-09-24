@@ -1,6 +1,6 @@
-from numbers import Real
-
 import numpy as np
+import pandas as pd
+from numpy.linalg import eigh, svd
 
 
 class PrincipalPortfolios:
@@ -56,6 +56,7 @@ class PrincipalPortfolios:
         self.assets = self.returns.columns
 
         self.Pi = self._estimate_predictability_matrix(pi_weight)
+        self.Pi_s, self.Pi_a = self._symmetrical_decompositions(self.Pi)
 
     @staticmethod
     def _transform_signals(signals, signal_transform):
@@ -99,7 +100,26 @@ class PrincipalPortfolios:
         else:
             raise ValueError(f"`pi_weight` needs to be either None or numeric")
 
+        Pi = pd.DataFrame(Pi, index=self.assets, columns=self.assets)
         return Pi
+
+    @staticmethod
+    def _symmetrical_decompositions(A):
+
+        As = (A + A.T) / 2
+        Aa = (A - A.T) / 2
+
+        U, sv, Vt = svd(A)
+        V = Vt.T
+
+        eigval_s, W = eigh(As)
+        order = np.argsort(eigval_s)[::-1]
+        eigval_s = eigval_s[order]
+        W = W[:, order]
+
+        # TODO parei aqui, decomposição da anti-simetrica
+
+        return As, Aa
 
 if __name__ == "__main__":
     from empfin import ff25p
@@ -122,4 +142,3 @@ if __name__ == "__main__":
         signal_transform="rank",
         pi_weight=None,
     )
-    print(pp.Pi.shape)
