@@ -40,11 +40,11 @@ class PrincipalPortfolios:
         assert returns.columns.equals(signals.columns), \
             "Columns of `assets` and `factors` must be the same"
 
-
+        self.signals = self._transform_signals(signals, signal_transform)
         self.signal_transform = signal_transform
-        self.signals = self._transform_signals(signals)
 
-    def _transform_signals(self, signals, signal_transform):
+    @staticmethod
+    def _transform_signals(signals, signal_transform):
         """
         Applies the cross-sectional signal transformation. "rank" maps signals
         at each date to equally spaced values in the interval [-0.5, 0.5],
