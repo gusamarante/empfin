@@ -41,6 +41,8 @@ class PrincipalPortfolios:
             predictability matrix Pi. If None, uses equal weights for every
             observation. If any number is passed, the number is used as the
             COM parameter of an exponentially weighting scheme.
+
+        # TODO add attributes
         """
 
         assert returns.index.equals(signals.index), \
@@ -56,7 +58,19 @@ class PrincipalPortfolios:
         self.assets = self.returns.columns
 
         self.Pi = self._estimate_predictability_matrix(pi_weight)
-        self.Pi_s, self.Pi_a, self.U, self.sv, self.V, self.lambdas_s, self.W, self.lambdas_a, self.X, self.Y = self._decompositions(self.Pi)
+        self.Pi_s, self.Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y = self._decompositions(self.Pi)
+
+        pp_names = [f"PP {k + 1}" for k in range(self.N)]
+        pep_names = [f"PEP {k + 1}" for k in range(self.N)]
+        pap_names = [f"PAP {k + 1}" for k in range(self.N // 2)]
+
+        # The singular-values / eigenvalues of each strategy are the expected returns
+        self.singular_values = pd.Series(sv, index=pp_names, name="Singular Values")
+        self.pep_eignvalues = pd.Series(lambdas_s, index=pep_names, name="PEP Eigenvalues")
+        self.pap_eignvalues = pd.Series(lambdas_a, index=pap_names, name="PAP Eigenvalues")
+
+        # Portfolio weights
+
 
     @staticmethod
     def _transform_signals(signals, signal_transform):
