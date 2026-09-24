@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from numpy.linalg import eigh, svd
 
+# TODO add weight scaling by portfolio target volatility
 
 class PrincipalPortfolios:
     """
@@ -70,6 +71,7 @@ class PrincipalPortfolios:
         self.pap_eignvalues = pd.Series(lambdas_a, index=pap_names, name="PAP Eigenvalues")
 
         # Portfolio weights
+        self.L, self.L_s, self.L_a, self.w, self.w_s, self.w_a = self._portfolio_weights(V, U, lambdas_s, W, X, Y)
 
 
     @staticmethod
@@ -136,16 +138,34 @@ class PrincipalPortfolios:
 
         # Eigen decomposition of the anti-symmetric part of Pi, which
         # keeps only the positive half of the conjugate purely complex
-        # eigenvalues
-        vals, vecs = np.linalg.eigh(1j * Pi_a)
-        keep = vals > 0
-        lambdas_a, Wa = vals[keep], vecs[:, keep]
-        order = np.argsort(lambdas_a)[::-1]
-        lambdas_a, Wa = lambdas_a[order], Wa[:, order]
+        # eigenvalues. Selecting by position instead of by sign
+        # matters when N is odd: the unpaired eigenvalue is zero in theory but
+        # can come out as a tiny positive number due to rounding error.
+        vals, vecs = np.linalg.eigh(1j * Pi_a)  # ascending order
+        n_pairs = Pi_a.shape[0] // 2
+        lambdas_a, Wa = vals[::-1][:n_pairs], vecs[:, ::-1][:, :n_pairs]
         X = np.sqrt(2) * Wa.real
         Y = np.sqrt(2) * Wa.imag
 
         return Pi_s, Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y
+
+    def _portfolio_weights(self, V, U, lambdas_s, W, X, Y):
+        # Optimal linear strategy (Proposition 3): L = (Pi'Pi)^(-1/2) Pi' = V U'
+        L = V @ U.T
+
+        # Optimal symmetric strategy (eq. 28): L_s = W sign(Lambda_s) W'
+        L_s = W @ np.diag(np.sign(lambdas_s)) @ W.T
+
+        # Optimal antisymmetric strategy (Proposition 8): L_a = sum_j (x_j y_j' - y_j x_j')
+        L_a = X @ Y.T - Y @ X.T
+
+        # Weights
+        w = self.signals @ pd.DataFrame(L, index=self.assets, columns=self.assets)
+        w_s = self.signals @ pd.DataFrame(L_s, index=self.assets, columns=self.assets)
+        w_a = self.signals @ pd.DataFrame(L_a, index=self.assets, columns=self.assets)
+
+        return L, L_s, L_a, w, w_s, w_a
+
 
 if __name__ == "__main__":
     from empfin import ff25p
@@ -168,3 +188,5 @@ if __name__ == "__main__":
         signal_transform="rank",
         pi_weight=None,
     )
+
+    print(pp.w)
