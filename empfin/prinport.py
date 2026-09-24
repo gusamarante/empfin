@@ -8,7 +8,7 @@ class PrincipalPortfolios:
     https://doi.org/10.1111/jofi.13199
     """
 
-    def __init__(self, returns, signals, signal_transform="rank"):
+    def __init__(self, returns, signals, signal_transform="rank", pi_weights=None):
         """
         Full-sample (in-sample) estimation of the principal portfolios. The
         framework uses the signals of all assets to predict the return of each
@@ -32,6 +32,12 @@ class PrincipalPortfolios:
             signals to equally spaced values in [-0.5, 0.5], making them
             dollar-neutral and insensitive to outliers. "zscore"
             standardizes each cross-section. "none" uses the raw signals.
+
+        pi_weights: str, float
+            Weighting scheme for the observations of the estimation of the
+            predictability matrix Pi. If None, uses equal weights for every
+            observation. If any number is passed, the number is used as the
+            COM parameter of an exponentially weighting scheme
         """
 
         assert returns.index.equals(signals.index), \
@@ -42,6 +48,11 @@ class PrincipalPortfolios:
 
         self.signals = self._transform_signals(signals, signal_transform)
         self.signal_transform = signal_transform
+        self.returns = returns
+        self.T, self.N = self.returns.shape
+        self.assets = self.returns.columns
+
+        self.Pi = self._estimate_predictability_matrix(pi_weights)
 
     @staticmethod
     def _transform_signals(signals, signal_transform):
@@ -70,6 +81,29 @@ class PrincipalPortfolios:
                 f"`signal_transform` must be 'rank', 'zscore' or 'none'. Got {signal_transform!r}"
             )
 
+    def _estimate_predictability_matrix(self, pi_weights):
+        # TODO parei aqui, estimar a matriz PI com os dois estimadores
+        #  disponíves
+        pass
+
 if __name__ == "__main__":
-    # TODO read data and test it
-    pass
+    from empfin import ff25p
+
+    # Get returns
+    rets = ff25p()
+    rets = rets[rets.index <= "2019-12-31"].dropna()
+
+    # Get signals
+    sigs = rets.rolling(12).sum().shift(1).dropna()
+
+    # Align index
+    new_idx = rets.index.intersection(sigs.index)
+    rets = rets.reindex(new_idx)
+    sigs = sigs.reindex(new_idx)
+
+    pp = PrincipalPortfolios(
+        returns=rets,
+        signals=sigs,
+        signal_transform="rank",
+    )
+    print(pp.signals)
