@@ -1,3 +1,6 @@
+from numbers import Real
+
+import numpy as np
 
 
 class PrincipalPortfolios:
@@ -8,7 +11,7 @@ class PrincipalPortfolios:
     https://doi.org/10.1111/jofi.13199
     """
 
-    def __init__(self, returns, signals, signal_transform="rank", pi_weights=None):
+    def __init__(self, returns, signals, signal_transform="rank", pi_weight=None):
         """
         Full-sample (in-sample) estimation of the principal portfolios. The
         framework uses the signals of all assets to predict the return of each
@@ -33,11 +36,11 @@ class PrincipalPortfolios:
             dollar-neutral and insensitive to outliers. "zscore"
             standardizes each cross-section. "none" uses the raw signals.
 
-        pi_weights: str, float
+        pi_weight: None, int, float
             Weighting scheme for the observations of the estimation of the
             predictability matrix Pi. If None, uses equal weights for every
             observation. If any number is passed, the number is used as the
-            COM parameter of an exponentially weighting scheme
+            COM parameter of an exponentially weighting scheme.
         """
 
         assert returns.index.equals(signals.index), \
@@ -52,7 +55,7 @@ class PrincipalPortfolios:
         self.T, self.N = self.returns.shape
         self.assets = self.returns.columns
 
-        self.Pi = self._estimate_predictability_matrix(pi_weights)
+        self.Pi = self._estimate_predictability_matrix(pi_weight)
 
     @staticmethod
     def _transform_signals(signals, signal_transform):
@@ -81,10 +84,22 @@ class PrincipalPortfolios:
                 f"`signal_transform` must be 'rank', 'zscore' or 'none'. Got {signal_transform!r}"
             )
 
-    def _estimate_predictability_matrix(self, pi_weights):
-        # TODO parei aqui, estimar a matriz PI com os dois estimadores
-        #  disponíves
-        pass
+    def _estimate_predictability_matrix(self, pi_weight):
+
+        if pi_weight is None:  # Equal weights
+            Pi = (self.returns.values.T @ self.signals.values) / self.T
+
+        elif isinstance(pi_weight, (float, int)):  # Exponential weights
+            assert pi_weight > 0, "`pi_weight` must be non-negative"
+            alpha = 1 / (1 + pi_weight)
+            decay = (1 - alpha) ** np.arange(self.T - 1, -1, -1)
+            w = decay / decay.sum()
+            Pi = (self.returns.values * w[:, None]).T @ self.signals.values
+
+        else:
+            raise ValueError(f"`pi_weight` needs to be either None or numeric")
+
+        return Pi
 
 if __name__ == "__main__":
     from empfin import ff25p
@@ -105,5 +120,6 @@ if __name__ == "__main__":
         returns=rets,
         signals=sigs,
         signal_transform="rank",
+        pi_weight=None,
     )
-    print(pp.signals)
+    print(pp.Pi.shape)
