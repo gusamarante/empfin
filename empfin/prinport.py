@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 from numpy.linalg import eigh, svd
 
+# TODO replicate the charts of the paper
 # TODO add weight scaling by portfolio target volatility
+# TODO add regularization
 
 class PrincipalPortfolios:
     """
