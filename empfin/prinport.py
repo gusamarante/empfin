@@ -56,7 +56,7 @@ class PrincipalPortfolios:
         self.assets = self.returns.columns
 
         self.Pi = self._estimate_predictability_matrix(pi_weight)
-        self.Pi_s, self.Pi_a = self._symmetrical_decompositions(self.Pi)
+        self.Pi_s, self.Pi_a, self.U, self.sv, self.V, self.lambdas_s, self.W, self.lambdas_a, self.X, self.Y = self._decompositions(self.Pi)
 
     @staticmethod
     def _transform_signals(signals, signal_transform):
@@ -104,22 +104,34 @@ class PrincipalPortfolios:
         return Pi
 
     @staticmethod
-    def _symmetrical_decompositions(A):
+    def _decompositions(Pi):
 
-        As = (A + A.T) / 2
-        Aa = (A - A.T) / 2
+        # Symmetric decomposition of the predictability matrix
+        Pi_s = (Pi + Pi.T) / 2
+        Pi_a = (Pi - Pi.T) / 2
 
-        U, sv, Vt = svd(A)
+        # SVD of the predictability matrix
+        U, sv, Vt = svd(Pi)
         V = Vt.T
 
-        eigval_s, W = eigh(As)
-        order = np.argsort(eigval_s)[::-1]
-        eigval_s = eigval_s[order]
+        # Eigen decomposition of the symmetric part of Pi
+        lambdas_s, W = eigh(Pi_s)
+        order = np.argsort(lambdas_s)[::-1]
+        lambdas_s = lambdas_s[order]
         W = W[:, order]
 
-        # TODO parei aqui, decomposição da anti-simetrica
+        # Eigen decomposition of the anti-symmetric part of Pi, which
+        # keeps only the positive half of the conjugate purely complex
+        # eigenvalues
+        vals, vecs = np.linalg.eigh(1j * Pi_a)
+        keep = vals > 0
+        lambdas_a, Wa = vals[keep], vecs[:, keep]
+        order = np.argsort(lambdas_a)[::-1]
+        lambdas_a, Wa = lambdas_a[order], Wa[:, order]
+        X = np.sqrt(2) * Wa.real
+        Y = np.sqrt(2) * Wa.imag
 
-        return As, Aa
+        return Pi_s, Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y
 
 if __name__ == "__main__":
     from empfin import ff25p
