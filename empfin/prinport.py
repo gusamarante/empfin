@@ -4,6 +4,9 @@ from numpy.linalg import eigh, svd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# TODO build the simple factor
+# TODO build the factor
+
 class PrincipalPortfolios:
     """
     Kelly, Bryan T., Semyon Malamud, and Lasse Heje Pedersen (2023)
