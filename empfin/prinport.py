@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from numpy.linalg import eigh, svd
+import matplotlib.pyplot as plt
 
 # TODO replicate the charts of the paper
 # TODO add weight scaling by portfolio target volatility
@@ -69,12 +70,70 @@ class PrincipalPortfolios:
 
         # The singular-values / eigenvalues of each strategy are the expected returns
         self.singular_values = pd.Series(sv, index=pp_names, name="Singular Values")
-        self.pep_eignvalues = pd.Series(lambdas_s, index=pep_names, name="PEP Eigenvalues")
-        self.pap_eignvalues = pd.Series(lambdas_a, index=pap_names, name="PAP Eigenvalues")
+        self.pep_eigenvalues = pd.Series(lambdas_s, index=pep_names, name="PEP Eigenvalues")
+        self.pap_eigenvalues = pd.Series(lambdas_a, index=pap_names, name="PAP Eigenvalues")
 
         # Portfolio weights
         self.L, self.L_s, self.L_a, self.w, self.w_s, self.w_a = self._portfolio_weights(V, U, lambdas_s, W, X, Y)
 
+    def plot_lambdas(self, size=5, title=None, save_path=None, color1="tab:blue", color2="tab:orange"):
+        """
+        Plots the singular values of the prediction matrix, the eigenvalues
+        of its symmetric part, and the pair magnitudes of its antisymmetric
+        part.
+
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        color1: str
+            Color of the bars
+
+        color2: str
+            Color used to highlight the negative PEP eigenvalues
+        """
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        if title is not None:
+            plt.suptitle(title)
+
+        ax = plt.subplot2grid((1, 3), (0, 0))
+        ax.set_title(r"Singular Values of $\Pi$" + "\n" + r"$E[PP_k]=\bar{\lambda_k}$")
+        ax.bar(range(1, self.N + 1), self.singular_values.values, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set_xlabel("$k$-th singular value")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        ax = plt.subplot2grid((1, 3), (0, 1))
+        ax.set_title(r"Eigenvalues of $\Pi_{s}$" + "\n" + r"$E[PEP_k]=\lambda_k^s$")
+        colors = [color1 if v >= 0 else color2 for v in self.pep_eigenvalues.values]
+        ax.bar(range(1, self.N + 1), self.pep_eigenvalues.values, color=colors)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set_xlabel("$k$-th eigenvalue")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        ax = plt.subplot2grid((1, 3), (0, 2))
+        ax.set_title(r"Pair Magnitudes $\lambda^{a}_{k}$ of $\Pi_{a}$" + "\n" + r"$E[PAP_k] = 2\lambda_k^a$")
+        ax.bar(range(1, self.N // 2 + 1), self.pap_eigenvalues.values, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set_xlabel("$k$-th paired magnitude")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
 
     @staticmethod
     def _transform_signals(signals, signal_transform):
@@ -191,4 +250,4 @@ if __name__ == "__main__":
         pi_weight=None,
     )
 
-    print(pp.w)
+    pp.plot_lambdas()
