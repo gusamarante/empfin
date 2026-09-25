@@ -3,9 +3,6 @@ import pandas as pd
 from numpy.linalg import eigh, svd
 import matplotlib.pyplot as plt
 
-# TODO add weight scaling by portfolio target volatility
-# TODO add regularization
-
 class PrincipalPortfolios:
     """
     Kelly, Bryan T., Semyon Malamud, and Lasse Heje Pedersen (2023)
@@ -14,7 +11,15 @@ class PrincipalPortfolios:
     https://doi.org/10.1111/jofi.13199
     """
 
-    def __init__(self, returns, signals, signal_transform="rank", pi_weight=None):
+    def __init__(
+            self,
+            returns,
+            signals,
+            signal_transform="rank",
+            pi_weight=None,
+            rank=None,
+            p_norm=np.inf,
+    ):
         """
         Full-sample (in-sample) estimation of the principal portfolios. The
         framework uses the signals of all assets to predict the return of each
@@ -45,6 +50,27 @@ class PrincipalPortfolios:
             observation. If any number is passed, the number is used as the
             COM parameter of an exponentially weighting scheme.
 
+        rank: None, int
+            Regularization parameter K of Proposition 11: the optimal
+            strategies are restricted to position matrices with rank(L) <= K,
+            which keeps only the K leading principal portfolios and zeroes out
+            the rest. For the PP strategy these are the top K singular values
+            of Pi, for the PEP strategy the K eigenvalues of Pi_s with the
+            largest absolute values, and for the PAP strategy the top K pairs
+            of Pi_a (rank 2K), capped at N // 2 pairs. If None (default),
+            there is no rank restriction.
+
+        p_norm: int, float
+            Regularization parameter p in [1, inf] of Proposition 11: the
+            exponent of the Schatten p-norm constraint ||L||_p <= 1. With
+            1/p + 1/q = 1, the retained principal portfolios are weighted
+            proportionally to lambda_k^(q-1). p = inf (default) is the
+            operator-norm constraint of the unregularized solutions
+            (Propositions 3, 6 and 8), which weights every retained portfolio
+            equally. p = 2 weights them by their expected returns
+            (L proportional to Pi' with no rank restriction), and p = 1 puts
+            all the weight on the leading portfolio.
+
         # TODO add attributes
         """
 
@@ -60,6 +86,15 @@ class PrincipalPortfolios:
         self.T, self.N = self.returns.shape
         self.assets = self.returns.columns
 
+        # Regularization parameters of Proposition 11
+        if rank is not None:
+            assert isinstance(rank, (int, np.integer)) and 1 <= rank <= self.N, \
+                f"`rank` must be None or an integer between 1 and N={self.N}"
+        assert p_norm >= 1, "`p_norm` must be in the interval [1, inf]"
+        self.rank = rank
+        self.p_norm = p_norm
+        self.q_norm = self._dual_exponent(p_norm)
+
         self.Pi = self._estimate_predictability_matrix(pi_weight)
         self.Pi_s, self.Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y = self._decompositions(self.Pi)
 
@@ -73,7 +108,7 @@ class PrincipalPortfolios:
         self.pap_eigenvalues = pd.Series(lambdas_a, index=pap_names, name="PAP Eigenvalues")
 
         # Portfolio weights
-        self.L, self.L_s, self.L_a, self.w, self.w_s, self.w_a = self._portfolio_weights(V, U, lambdas_s, W, X, Y)
+        self.L, self.L_s, self.L_a, self.w, self.w_s, self.w_a = self._portfolio_weights(V, U, sv, lambdas_s, W, X, Y, lambdas_a)
 
     def plot_lambdas(self, size=5, title=None, save_path=None, color1="tab:blue", color2="tab:orange"):
         """
@@ -209,15 +244,61 @@ class PrincipalPortfolios:
 
         return Pi_s, Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y
 
-    def _portfolio_weights(self, V, U, lambdas_s, W, X, Y):
-        # Optimal linear strategy (Proposition 3): L = (Pi'Pi)^(-1/2) Pi' = V U'
-        L = V @ U.T
+    @staticmethod
+    def _dual_exponent(p):
+        """
+        Hölder conjugate q of the Schatten norm exponent p, 1/p + 1/q = 1,
+        including the limiting cases p = 1 (q = inf) and p = inf (q = 1).
+        """
+        if p == 1:
+            return np.inf
+        elif np.isinf(p):
+            return 1.0
+        else:
+            return p / (p - 1)
 
-        # Optimal symmetric strategy (eq. 28): L_s = W sign(Lambda_s) W'
-        L_s = W @ np.diag(np.sign(lambdas_s)) @ W.T
+    def _regularized_weights(self, magnitudes, block_size=1):
+        """
+        Weights of the retained principal port folios in Proposition 11,
+        """
+        m_max = magnitudes.max()
+        rel = magnitudes / m_max if m_max > 0 else np.ones_like(magnitudes)
+        d = rel ** (self.q_norm - 1)  # note that 0^0 = 1 when q = 1 (p = inf)
 
-        # Optimal antisymmetric strategy (Proposition 8): L_a = sum_j (x_j y_j' - y_j x_j')
-        L_a = X @ Y.T - Y @ X.T
+        if np.isinf(self.p_norm):
+            norm = d.max()
+        else:
+            norm = (block_size * np.sum(d ** self.p_norm)) ** (1 / self.p_norm)
+
+        return d / norm
+
+    def _portfolio_weights(self, V, U, sv, lambdas_s, W, X, Y, lambdas_a):
+        # With the default p = inf and no rank restriction, the solutions
+        # below reduce to the unregularized optimal strategies of
+        # Propositions 3, 6 and 8, since every retained weight equals one.
+        K = self.N if self.rank is None else self.rank
+        K_a = min(K, self.N // 2)  # PAP components come in pairs
+
+        # Optimal linear strategy (Proposition 11 (i)):
+        # L = c sum_{k<=K} sv_k^(q-1) v_k u_k'. Singular values from svd are
+        # already sorted in descending order.
+        d = self._regularized_weights(sv[:K])
+        L = V[:, :K] @ np.diag(d) @ U[:, :K].T
+
+        # Optimal symmetric strategy (Proposition 11 (ii)):
+        # L_s = c sum_{k in K} |lambda_k^s|^(q-1) sign(lambda_k^s) w_k w_k',
+        # where the retained set holds the K largest ABSOLUTE eigenvalues,
+        # which can include negative ones.
+        idx = np.argsort(-np.abs(lambdas_s), kind="stable")[:K]
+        d_s = self._regularized_weights(np.abs(lambdas_s[idx])) * np.sign(lambdas_s[idx])
+        L_s = W[:, idx] @ np.diag(d_s) @ W[:, idx].T
+
+        # Optimal antisymmetric strategy (Proposition 11 (iii)):
+        # L_a = c sum_{k<=K} (lambda_k^a)^(q-1) (x_k y_k' - y_k x_k')
+        # The pair magnitudes are already sorted in descending order.
+        d_a = self._regularized_weights(lambdas_a[:K_a], block_size=2)
+        L_a = (X[:, :K_a] @ np.diag(d_a) @ Y[:, :K_a].T
+               - Y[:, :K_a] @ np.diag(d_a) @ X[:, :K_a].T)
 
         # Weights
         w = self.signals @ pd.DataFrame(L, index=self.assets, columns=self.assets)
@@ -249,4 +330,4 @@ if __name__ == "__main__":
         pi_weight=None,
     )
 
-    pp.w.to_clipboard()
+    pp.plot_lambdas()
