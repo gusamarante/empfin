@@ -250,4 +250,4 @@ if __name__ == "__main__":
         pi_weight=None,
     )
 
-    pp.plot_lambdas()
+    pp.w.to_clipboard()
