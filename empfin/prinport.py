@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from numpy.linalg import eigh, svd
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 class PrincipalPortfolios:
     """
@@ -169,6 +170,63 @@ class PrincipalPortfolios:
         plt.show()
         plt.close()
 
+    def plot_prediction_matrix(self, which="full", size=5, title=None, save_path=None, cmap="RdBu_r"):
+        """
+        Heatmap of the prediction matrix (or one of its symmetry
+        components). Rows are the return leg and columns are the signal
+        leg, so entry (i, j) measures how the signal of asset j predicts
+        the return of asset i.
+
+        Parameters
+        ----------
+        which: str
+            "full" for Pi, "symmetric" for Pi_sym, "antisymmetric" for
+            Pi_asym
+
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        cmap: str
+            Diverging colormap used by the heatmap
+        """
+        options = {
+            "full": (self.Pi, r"$\Pi$"),
+            "symmetric": (self.Pi_s, r"$\Pi_{s}$"),
+            "antisymmetric": (self.Pi_a, r"$\Pi_{a}$"),
+        }
+        if which not in options:
+            raise ValueError(
+                f"which must be 'full', 'symmetric' or 'antisymmetric'; got {which!r}"
+            )
+        mat, default_title = options[which]
+
+        plt.figure(figsize=(size * 1.2, size))
+        vmax = np.abs(mat.values).max()
+        ax = sns.heatmap(
+            mat,
+            cmap=cmap,
+            vmin=-vmax,
+            vmax=vmax,
+            square=True,
+            cbar_kws={"shrink": 0.8},
+        )
+        ax.set_title(title if title is not None else default_title)
+        ax.set_xlabel("Signal")
+        ax.set_ylabel("Return")
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
+
     @staticmethod
     def _transform_signals(signals, signal_transform):
         """
@@ -306,28 +364,3 @@ class PrincipalPortfolios:
         w_a = self.signals @ pd.DataFrame(L_a, index=self.assets, columns=self.assets)
 
         return L, L_s, L_a, w, w_s, w_a
-
-
-if __name__ == "__main__":
-    from empfin import ff25p
-
-    # Get returns
-    rets = ff25p()
-    rets = rets[rets.index <= "2019-12-31"].dropna()
-
-    # Get signals
-    sigs = rets.rolling(12).sum().shift(1).dropna()
-
-    # Align index
-    new_idx = rets.index.intersection(sigs.index)
-    rets = rets.reindex(new_idx)
-    sigs = sigs.reindex(new_idx)
-
-    pp = PrincipalPortfolios(
-        returns=rets,
-        signals=sigs,
-        signal_transform="rank",
-        pi_weight=None,
-    )
-
-    pp.plot_lambdas()
