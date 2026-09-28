@@ -7,15 +7,13 @@ Currently available models for estimation of risk premia:
 - `CrossSectionReg`: two-pass cross-sectional regression, described in [Cochrane (2005)](https://press.princeton.edu/books/hardcover/9780691121376/asset-pricing?srsltid=AfmBOoobXP_DmuPEfu1g7gm1ppk4h69GFHtwJqq0ugoZwSYKW60gLXZ6), Section 12.2. Includes options for OLS and GLS estimators.
 - `NonTradableFactors`: iterative maximum-likelihood estimator for non-tradable factors, described in [Campbell, Lo & MacKinlay (2012)](https://www.amazon.com/Econometrics-Financial-Markets-John-Campbell/dp/0691043019), Section 6.2.3
 - `FamaMacBeth`: classical two-pass Fama-MacBeth regression, with optional rolling-window first pass, Newey-West HAC standard errors, and Shanken (1992) errors-in-variables correction, from [Fama & MacBeth (1973)](https://doi.org/10.1086/260061)
-- `RiskPremiaTermStructure`: term structure of risk premia with a single factor, tradable or not, following [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696). I would like to thank the authors for sharing their replication files.
-- `ConditionalRiskPremiaTermStructure`: conditional, VAR-augmented version of the term-structure estimator, from [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696).
 - Bayesian Fama-MacBeth Regressions from [Bryzgalova, Huang & Julliard (2024)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4989615):
   - `BFM`: Bayesian Fama-MacBeth (BFM-OLS), which replaces the two-pass point estimates with a posterior distribution over the risk premia
   - `BFMGLS`: GLS variant of the Bayesian Fama-MacBeth, which uses the idiosyncratic-error precision matrix in the cross-sectional step
   - `BFMOMIT`: variant of the Bayesian Fama-MacBeth that is robust to omitted factors by projecting onto the principal components of the asset-return covariance
-- Principal Portfolios from [Kelly, Malamud & Pedersen (2023)](https://doi.org/10.1111/jofi.13199), which use all assets' signals to predict each asset's return through the prediction matrix, and decompose the optimal strategy into exposure (PEP) and alpha (PAP) components:
-  - `PrincipalPortfolios`: full-sample estimation of the prediction matrix and its principal portfolio decompositions
-  - `PrincipalPortfoliosBacktest`: out-of-sample rolling-window backtest of the principal portfolio strategies
+- `PrincipalPortfolios`: Principal Portfolios from [Kelly, Malamud & Pedersen (2023)](https://doi.org/10.1111/jofi.13199), which use all assets' signals to predict each asset's return through the prediction matrix, and decompose the optimal strategy into exposure (PEP) and alpha (PAP) components:
+- `RiskPremiaTermStructure`: term structure of risk premia with a single factor, tradable or not, following [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696). I would like to thank the authors for sharing their replication files.
+- `ConditionalRiskPremiaTermStructure`: conditional, VAR-augmented version of the term-structure estimator, from [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696).
 
 # Examples
 For each model, there is a jupyter notebook with [examples](https://github.com/gusamarante/empfin/tree/main/examples) of their use.
