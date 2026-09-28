@@ -73,7 +73,116 @@ class PrincipalPortfolios:
             (L proportional to Pi' with no rank restriction), and p = 1 puts
             all the weight on the leading portfolio.
 
-        # TODO add attributes
+        Attributes
+        ----------
+        returns: pandas.DataFrame
+            Timeseries of asset returns, as passed to the constructor
+
+        signals: pandas.DataFrame
+            Timeseries of the signals after `signal_transform` is applied.
+            Row t is paired with the return in row t of `returns`
+
+        signal_transform: str
+            The cross-sectional signal transformation used
+
+        T: int
+            Number of observations (dates)
+
+        N: int
+            Number of assets
+
+        assets: pandas.Index
+            Names of the assets, the columns of `returns` and `signals`
+
+        pi_weight: None, int, float
+            Observation weighting scheme used to estimate `Pi` and the return
+            covariance behind `latent_factor`
+
+        rank: None, int
+            The rank restriction K of Proposition 11
+
+        p_norm: float
+            The Schatten norm exponent p of Proposition 11
+
+        q_norm: float
+            Hölder conjugate of `p_norm`, 1/p + 1/q = 1
+
+        Pi: pandas.DataFrame
+            Estimated prediction matrix Pi = E[R S'], N x N. Rows are the
+            return leg and columns are the signal leg, so entry (i, j)
+            measures how the signal of asset j predicts the return of asset i
+
+        Pi_s: pandas.DataFrame
+            Symmetric part of the prediction matrix, (Pi + Pi') / 2
+
+        Pi_a: pandas.DataFrame
+            Antisymmetric part of the prediction matrix, (Pi - Pi') / 2
+
+        singular_values: pandas.Series
+            Singular values of `Pi` in decreasing order, indexed "PP 1" to
+            "PP N". They equal the in-sample expected returns of the PPs
+
+        pep_eigenvalues: pandas.Series
+            Eigenvalues of `Pi_s` in decreasing order, indexed "PEP 1" to
+            "PEP N". They equal the in-sample expected returns of the PEPs.
+            Negative eigenvalues are evidence against the no-alpha null
+
+        pap_eigenvalues: pandas.Series
+            The N // 2 pair magnitudes lambda_k^a of `Pi_a` in decreasing
+            order, indexed "PAP 1" to "PAP N//2". The in-sample expected
+            return of PAP k is 2 * lambda_k^a
+
+        L: numpy.ndarray
+            N x N position matrix of the optimal linear strategy
+            (Proposition 3, regularized by `rank` and `p_norm` as in
+            Proposition 11)
+
+        L_s: numpy.ndarray
+            N x N position matrix of the optimal symmetric strategy
+            (Proposition 6, regularized as in Proposition 11), which goes
+            long the PEPs with positive eigenvalues and short the ones with
+            negative eigenvalues
+
+        L_a: numpy.ndarray
+            N x N position matrix of the optimal antisymmetric strategy
+            (Proposition 8, regularized as in Proposition 11), built from
+            the PAPs
+
+        w: pandas.DataFrame
+            Timeseries of asset positions S_t' L of the optimal linear
+            strategy. Row t is applied to the returns in row t of `returns`
+
+        w_s: pandas.DataFrame
+            Timeseries of asset positions S_t' L_s of the optimal symmetric
+            strategy
+
+        w_a: pandas.DataFrame
+            Timeseries of asset positions S_t' L_a of the optimal
+            antisymmetric strategy
+
+        pp: pandas.DataFrame
+            Timeseries of the returns of each principal portfolio,
+            PP_k = (S' v_k) (u_k' R), with columns "PP 1" to "PP N"
+
+        pep: pandas.DataFrame
+            Timeseries of the returns of each principal exposure portfolio,
+            PEP_k = (S' w_k) (w_k' R), with columns "PEP 1" to "PEP N"
+
+        pap: pandas.DataFrame
+            Timeseries of the returns of each principal alpha portfolio,
+            PAP_k = (S' x_k) (y_k' R) - (S' y_k) (x_k' R), with columns
+            "PAP 1" to "PAP N//2"
+
+        simple_factor: pandas.Series
+            Timeseries of the returns of the simple factor S' R, which
+            trades each asset on its own signal. It equals the sum of all
+            the PEPs
+
+        latent_factor: pandas.Series
+            Timeseries of the returns of the latent factor F of Lemma 1,
+            the unique tradable factor whose betas are the signals. Its
+            weights Sigma^-1 S_t / (S_t' Sigma^-1 S_t) use the return
+            covariance Sigma estimated with the `pi_weight` scheme
         """
 
         assert returns.index.equals(signals.index), \
