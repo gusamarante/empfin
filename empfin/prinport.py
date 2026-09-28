@@ -4,8 +4,6 @@ from numpy.linalg import eigh, svd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# TODO build the simple factor
-# TODO build the factor
 
 class PrincipalPortfolios:
     """
@@ -99,6 +97,7 @@ class PrincipalPortfolios:
         self.p_norm = p_norm
         self.q_norm = self._dual_exponent(p_norm)
 
+        self.pi_weight = pi_weight
         self.Pi = self._estimate_predictability_matrix(pi_weight)
         self.Pi_s, self.Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y = self._decompositions(self.Pi)
 
@@ -113,6 +112,9 @@ class PrincipalPortfolios:
 
         # Portfolio weights
         self.L, self.L_s, self.L_a, self.w, self.w_s, self.w_a = self._portfolio_weights(V, U, sv, lambdas_s, W, X, Y, lambdas_a)
+
+        # Stream of Portfolio Returns
+        self.pp, self.pep, self.pap, self.simple_factor, self.latent_factor = self._portfolio_returns(U, V, W, X, Y, pp_names, pep_names, pap_names)
 
     def plot_lambdas(self, size=5, title=None, save_path=None, color1="tab:blue", color2="tab:orange"):
         """
@@ -257,21 +259,28 @@ class PrincipalPortfolios:
                 f"`signal_transform` must be 'rank', 'zscore' or 'none'. Got {signal_transform!r}"
             )
 
-    def _estimate_predictability_matrix(self, pi_weight):
-
+    def _observation_weights(self, pi_weight):
+        """
+        Weights of each observation (summing to one) in the estimation of Pi
+        and of the covariance of returns used by the latent factor. None
+        gives equal weights; a number is the COM of exponential weights that
+        put the most weight on the latest observation.
+        """
         if pi_weight is None:  # Equal weights
-            Pi = (self.returns.values.T @ self.signals.values) / self.T
+            return np.full(self.T, 1 / self.T)
 
         elif isinstance(pi_weight, (float, int)):  # Exponential weights
             assert pi_weight > 0, "`pi_weight` must be non-negative"
             alpha = 1 / (1 + pi_weight)
             decay = (1 - alpha) ** np.arange(self.T - 1, -1, -1)
-            w = decay / decay.sum()
-            Pi = (self.returns.values * w[:, None]).T @ self.signals.values
+            return decay / decay.sum()
 
         else:
             raise ValueError(f"`pi_weight` needs to be either None or numeric")
 
+    def _estimate_predictability_matrix(self, pi_weight):
+        w = self._observation_weights(pi_weight)
+        Pi = (self.returns.values * w[:, None]).T @ self.signals.values
         Pi = pd.DataFrame(Pi, index=self.assets, columns=self.assets)
         return Pi
 
@@ -367,3 +376,68 @@ class PrincipalPortfolios:
         w_a = self.signals @ pd.DataFrame(L_a, index=self.assets, columns=self.assets)
 
         return L, L_s, L_a, w, w_s, w_a
+
+    def _portfolio_returns(self, U, V, W, X, Y, pp_names, pep_names, pap_names):
+        """
+        Timeseries of the returns of every individual principal portfolio and
+        of the simple factor. Signals and returns are taken from the same row
+        (the caller is responsible for lagging the signals), so the return of
+        date t is S_t' L_k R_t for the rank-one position matrix L_k of each
+        component. These are the raw, unregularized building blocks: `rank`
+        and `p_norm` only affect how they are combined in `L`, `L_s` and
+        `L_a`, not the components themselves.
+
+        With equal `pi_weight`, the in-sample averages recover the spectrum
+        of Pi exactly: E[PP_k] = sv_k, E[PEP_k] = lambda_k^s and
+        E[PAP_k] = 2 lambda_k^a.
+
+        Also builds the latent factor F of Lemma 1, eq. (20), the unique
+        tradable factor whose betas are exactly the signals,
+        S_{i,t} = cov(R_i, F) / var(F).
+        """
+        S = self.signals.values
+        R = self.returns.values
+
+        # Principal portfolios, eq. (15): PP_k = (S' v_k) (u_k' R), which
+        # trades the position portfolio u_k on the signal of the timing
+        # portfolio v_k.
+        pp = (S @ V) * (R @ U)
+
+        # Principal exposure portfolios, eq. (29): PEP_k = (S' w_k) (w_k' R),
+        # each eigenvector portfolio of Pi_s traded on its own signal.
+        pep = (S @ W) * (R @ W)
+
+        # Principal alpha portfolios: position matrix x_k y_k' - y_k x_k',
+        # so PAP_k = (S' x_k) (y_k' R) - (S' y_k) (x_k' R). With the pairs
+        # from `_decompositions` (Pi_a x_k = lambda_k y_k and
+        # Pi_a y_k = -lambda_k x_k), this is the same sign convention as
+        # `L_a` and gives E[PAP_k] = +2 lambda_k^a.
+        pap = (S @ X) * (R @ Y) - (S @ Y) * (R @ X)
+
+        # Simple factor, eq. (3): each asset traded on its own signal
+        # (L = Id). By eq. (32) it equals the sum of all the PEPs.
+        simple = (S * R).sum(axis=1)
+
+        # Latent factor, eq. (20): F = [Sigma^-1 S / (S' Sigma^-1 S)]' R.
+        # The paper's Sigma_{R,t} is the conditional covariance of returns,
+        # which is not observed. It is estimated here with the same
+        # observation weights as Pi (sample covariance for equal weights,
+        # exponentially weighted otherwise), so both inputs of the strategies
+        # share one estimation scheme. The weights are invariant to the scale
+        # of Sigma, so the 1/T vs 1/(T-1) normalization is irrelevant. Sigma
+        # must be invertible, which requires more observations than assets.
+        obs_w = self._observation_weights(self.pi_weight)
+        R_dm = R - obs_w @ R
+        Sigma = (R_dm * obs_w[:, None]).T @ R_dm
+        Sigma_inv_S = np.linalg.solve(Sigma, S.T).T  # row t holds Sigma^-1 S_t
+        factor_weights = Sigma_inv_S / (S * Sigma_inv_S).sum(axis=1)[:, None]
+        factor = (factor_weights * R).sum(axis=1)
+
+        index = self.returns.index
+        pp = pd.DataFrame(pp, index=index, columns=pp_names)
+        pep = pd.DataFrame(pep, index=index, columns=pep_names)
+        pap = pd.DataFrame(pap, index=index, columns=pap_names)
+        simple = pd.Series(simple, index=index, name="Simple Factor")
+        factor = pd.Series(factor, index=index, name="Latent Factor")
+
+        return pp, pep, pap, simple, factor
