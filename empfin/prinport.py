@@ -1,0 +1,768 @@
+import numbers
+
+import numpy as np
+import pandas as pd
+from numpy.linalg import eigh, svd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+class PrincipalPortfolios:
+    """
+    Kelly, Bryan T., Semyon Malamud, and Lasse Heje Pedersen (2023)
+    "Principal Portfolios"
+    The Journal of Finance, 78(1), 347-387
+    https://doi.org/10.1111/jofi.13199
+    """
+
+    def __init__(
+            self,
+            returns,
+            signals,
+            signal_transform="rank",
+            weighting=None,
+            rank=None,
+            p_norm=np.inf,
+            vol_target=None,
+    ):
+        """
+        Full-sample (in-sample) estimation of the principal portfolios. The
+        framework uses the signals of all assets to predict the return of each
+        individual asset, including cross-predictability.
+
+        The class does NOT lag the signals. Row t of `signals` is paired with
+        row t of `returns`, so the user must lag the signals before passing
+        them (see `signals`). Passing unlagged signals gives look-ahead
+        results, and the class has no way to detect it.
+
+        Parameters
+        ----------
+        returns: pandas.DataFrame
+            Timeseries of asset (excess) returns
+
+        signals: pandas.DataFrame
+            Timeseries of the predictive signals. Must have the same index
+            and columns as `returns`. The signal in row t is paired with the
+            return in row t of `returns`, without any lag. The user is
+            responsible for the timing: row t must contain only information
+            available before the return of row t is realized. For example,
+            for a 12-month momentum signal on monthly returns, use
+            `returns.rolling(12).sum().shift(1)`, so that row t holds the
+            returns from t-12 to t-1.
+
+            Neither `returns` nor `signals` may contain missing values. The
+            user must drop the dates with missing values (such as the first
+            rows created by `.shift`) and align both indexes before passing
+            them.
+
+        signal_transform: str
+            Cross-sectional transformation applied to the signals at each
+            date before pairing. "rank" (default, as in the paper) maps the
+            signals to equally spaced values in [-0.5, 0.5], making them
+            dollar-neutral and insensitive to outliers. "zscore"
+            standardizes each cross-section. "none" uses the raw signals.
+
+        weighting: None, int, float
+            Weighting scheme for the observations of the estimation of the
+            predictability matrix Pi. If None, uses equal weights for every
+            observation. If a positive number is passed, it is used as the
+            COM parameter of an exponentially weighting scheme.
+
+        rank: None, int
+            Regularization parameter K of Proposition 11: the optimal
+            strategies are restricted to position matrices with rank(L) <= K,
+            which keeps only the K leading principal portfolios and zeroes out
+            the rest. For the PP strategy these are the top K singular values
+            of Pi, for the PEP strategy the K eigenvalues of Pi_s with the
+            largest absolute values, and for the PAP strategy the top K pairs
+            of Pi_a (rank 2K), capped at N // 2 pairs. If None (default),
+            there is no rank restriction.
+
+        p_norm: int, float
+            Regularization parameter p in [1, inf] of Proposition 11: the
+            exponent of the Schatten p-norm constraint ||L||_p <= 1. With
+            1/p + 1/q = 1, the retained principal portfolios are weighted
+            proportionally to lambda_k^(q-1). p = inf (default) is the
+            operator-norm constraint of the unregularized solutions
+            (Propositions 3, 6 and 8), which weights every retained portfolio
+            equally. p = 2 weights them by their expected returns
+            (L proportional to Pi' with no rank restriction), and p = 1 puts
+            all the weight on the leading portfolio.
+
+        vol_target: None, float
+            Target volatility of the asset positions `w`, `w_s` and `w_a`,
+            and of the positions returned by `get_weights`, in
+            the same periodicity as `returns` (e.g. pass 0.10 / sqrt(12) for
+            10% a year with monthly returns). If None (default), the positions
+            are left unscaled. Otherwise, the positions of each date are
+            rescaled so that their ex-ante volatility, sqrt(w_t' Sigma w_t),
+            equals `vol_target`. This uses the full-sample `Sigma`, so the
+            scaling is in-sample like the rest of the estimation.
+
+            When `vol_target` is passed, the positions are no longer tied to
+            the position matrices `L`, `L_s` and `L_a`. The scale factor
+            changes from date to date, so `w` is no longer equal to S_t' L
+            (and likewise for `w_s` and `w_a`), and no single matrix
+            reproduces the scaled positions. `L`, `L_s` and `L_a` themselves
+            are not changed: they still describe the unscaled strategies of
+            Propositions 3, 6, 8 and 11. As a consequence, the in-sample
+            average returns of the scaled strategies no longer match the
+            singular values and eigenvalues of `Pi`.
+
+        Attributes
+        ----------
+        returns: pandas.DataFrame
+            Timeseries of asset returns, as passed to the constructor
+
+        signals: pandas.DataFrame
+            Timeseries of the signals after `signal_transform` is applied.
+            Row t is paired with the return in row t of `returns`, without
+            any lag applied by the class.
+
+        signal_transform: str
+            The cross-sectional signal transformation used
+
+        T: int
+            Number of observations (dates)
+
+        N: int
+            Number of assets
+
+        assets: pandas.Index
+            Names of the assets, the columns of `returns` and `signals`
+
+        weighting: None, int, float
+            Observation weighting scheme used to estimate `Pi` and `Sigma`
+
+        rank: None, int
+            The rank restriction K of Proposition 11
+
+        p_norm: float
+            The Schatten norm exponent p of Proposition 11
+
+        q_norm: float
+            Hölder conjugate of `p_norm`, 1/p + 1/q = 1
+
+        vol_target: None, float
+            Target ex-ante volatility of the asset positions, None if the
+            positions are not scaled
+
+        Pi: pandas.DataFrame
+            Estimated prediction matrix Pi = E[R S'], N x N. Rows are the
+            return leg and columns are the signal leg, so entry (i, j)
+            measures how the signal of asset j predicts the return of asset i
+
+        Pi_s: pandas.DataFrame
+            Symmetric part of the prediction matrix, (Pi + Pi') / 2
+
+        Pi_a: pandas.DataFrame
+            Antisymmetric part of the prediction matrix, (Pi - Pi') / 2
+
+        Sigma: pandas.DataFrame
+            Covariance matrix of returns, N x N, estimated with the same
+            observation weights as `Pi` (see `weighting`). Returns are
+            demeaned by their weighted mean, and the weights sum to one, so
+            with equal weights this is the 1/T sample covariance
+
+        singular_values: pandas.Series
+            Singular values of `Pi` in decreasing order, indexed "PP 1" to
+            "PP N". They equal the in-sample expected returns of the PPs
+
+        pep_eigenvalues: pandas.Series
+            Eigenvalues of `Pi_s` in decreasing order, indexed "PEP 1" to
+            "PEP N". They equal the in-sample expected returns of the PEPs.
+            Negative eigenvalues are evidence against the no-alpha null
+
+        pap_eigenvalues: pandas.Series
+            The N // 2 pair magnitudes lambda_k^a of `Pi_a` in decreasing
+            order, indexed "PAP 1" to "PAP N//2". The in-sample expected
+            return of PAP k is 2 * lambda_k^a
+
+        L: numpy.ndarray
+            N x N position matrix of the optimal linear strategy
+            (Proposition 3, regularized by `rank` and `p_norm` as in
+            Proposition 11)
+
+        L_s: numpy.ndarray
+            N x N position matrix of the optimal symmetric strategy
+            (Proposition 6, regularized as in Proposition 11), which goes
+            long the PEPs with positive eigenvalues and short the ones with
+            negative eigenvalues
+
+        L_a: numpy.ndarray
+            N x N position matrix of the optimal antisymmetric strategy
+            (Proposition 8, regularized as in Proposition 11), built from
+            the PAPs. `L`, `L_s` and `L_a` are never affected by
+            `vol_target`, because the volatility scaling changes from date
+            to date and cannot be folded into a constant matrix
+
+        w: pandas.DataFrame
+            Timeseries of asset positions S_t' L of the optimal linear
+            strategy. Row t is applied to the returns in row t of `returns`.
+            If `vol_target` is set, row t is c_t S_t' L, where the positive
+            scalar c_t makes the row's ex-ante volatility equal `vol_target`.
+            Dates where the unscaled positions have zero volatility (e.g.
+            all signals tied) keep zero positions. `get_weights` computes
+            the same positions for new signals, such as out-of-sample dates
+
+        w_s: pandas.DataFrame
+            Timeseries of asset positions S_t' L_s of the optimal symmetric
+            strategy, scaled like `w` when `vol_target` is set
+
+        w_a: pandas.DataFrame
+            Timeseries of asset positions S_t' L_a of the optimal
+            antisymmetric strategy, scaled like `w` when `vol_target` is set
+
+        pp: pandas.DataFrame
+            Timeseries of the returns of each principal portfolio,
+            PP_k = (S' v_k) (u_k' R), with columns "PP 1" to "PP N"
+
+        pep: pandas.DataFrame
+            Timeseries of the returns of each principal exposure portfolio,
+            PEP_k = (S' w_k) (w_k' R), with columns "PEP 1" to "PEP N"
+
+        pap: pandas.DataFrame
+            Timeseries of the returns of each principal alpha portfolio,
+            PAP_k = (S' x_k) (y_k' R) - (S' y_k) (x_k' R), with columns
+            "PAP 1" to "PAP N//2"
+
+        simple_factor: pandas.Series
+            Timeseries of the returns of the simple factor S' R, which
+            trades each asset on its own signal. It equals the sum of all
+            the PEPs
+
+        latent_factor: pandas.Series
+            Timeseries of the returns of the latent factor F of Lemma 1,
+            the unique tradable factor whose betas are the signals. Its
+            weights Sigma^-1 S_t / (S_t' Sigma^-1 S_t) use `Sigma`
+        """
+
+        assert returns.index.equals(signals.index), \
+            "Indexes of `returns` and `signals` must be the same"
+
+        assert returns.columns.equals(signals.columns), \
+            "Columns of `returns` and `signals` must be the same"
+
+        self.signals = self._transform_signals(signals, signal_transform)
+        self.signal_transform = signal_transform
+        self.returns = returns
+        self.T, self.N = self.returns.shape
+        self.assets = self.returns.columns
+
+        # Regularization parameters of Proposition 11
+        if rank is not None:
+            assert isinstance(rank, (int, np.integer)) and 1 <= rank <= self.N, \
+                f"`rank` must be None or an integer between 1 and N={self.N}"
+
+        assert p_norm >= 1, "`p_norm` must be in the interval [1, inf]"
+
+        if vol_target is not None:
+            assert isinstance(vol_target, (int, float, np.number)) and not isinstance(vol_target, bool) \
+                and vol_target > 0, "`vol_target` must be None or a positive number"
+
+        self.rank = rank
+        self.p_norm = p_norm
+        self.q_norm = self._dual_exponent(p_norm)
+        self.vol_target = vol_target
+
+        self.weighting = weighting
+        self.Pi = self._estimate_predictability_matrix(weighting)
+        self.Pi_s, self.Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y = self._decompositions(self.Pi)
+
+        # Covariance of returns, using the same observation weights as Pi
+        self.Sigma = self._estimate_covariance(weighting)
+
+        pp_names = [f"PP {k + 1}" for k in range(self.N)]
+        pep_names = [f"PEP {k + 1}" for k in range(self.N)]
+        pap_names = [f"PAP {k + 1}" for k in range(self.N // 2)]
+
+        # The singular-values / eigenvalues of each strategy are the expected returns
+        self.singular_values = pd.Series(sv, index=pp_names, name="Singular Values")
+        self.pep_eigenvalues = pd.Series(lambdas_s, index=pep_names, name="PEP Eigenvalues")
+        self.pap_eigenvalues = pd.Series(lambdas_a, index=pap_names, name="PAP Eigenvalues")
+
+        # Singular vectors of Pi and eigenvectors of Pi_s and Pi_a, kept to
+        # build the positions of the individual portfolios in `get_weights`
+        self._U, self._V, self._W, self._X, self._Y = U, V, W, X, Y
+
+        # Position matrices of the optimal strategies
+        self.L, self.L_s, self.L_a = self._optimal_position_matrices(V, U, sv, lambdas_s, W, X, Y, lambdas_a)
+
+        # Asset positions S_t' L of the optimal strategies on the estimation
+        # sample. They go through the same code as `get_weights`, including
+        # the volatility targeting (a no-op if vol_target is None)
+        self.w = self._weights(self.signals, "L")
+        self.w_s = self._weights(self.signals, "L_s")
+        self.w_a = self._weights(self.signals, "L_a")
+
+        # Stream of Portfolio Returns
+        self.pp, self.pep, self.pap, self.simple_factor, self.latent_factor = self._portfolio_returns(U, V, W, X, Y, pp_names, pep_names, pap_names)
+
+    def plot_lambdas(self, size=5, title=None, save_path=None, color1="tab:blue", color2="tab:orange"):
+        """
+        Plots the singular values of the prediction matrix, the eigenvalues
+        of its symmetric part, and the pair magnitudes of its antisymmetric
+        part.
+
+        Parameters
+        ----------
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        color1: str
+            Color of the bars
+
+        color2: str
+            Color used to highlight the negative PEP eigenvalues
+        """
+        plt.figure(figsize=(size * (16 / 7.3), size))
+        if title is not None:
+            plt.suptitle(title)
+
+        ax = plt.subplot2grid((1, 3), (0, 0))
+        ax.set_title(r"Singular Values of $\Pi$" + "\n" + r"$E[PP_k]=\bar{\lambda_k}$")
+        ax.bar(range(1, self.N + 1), self.singular_values.values, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set_xlabel("$k$-th singular value")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        ax = plt.subplot2grid((1, 3), (0, 1))
+        ax.set_title(r"Eigenvalues of $\Pi_{s}$" + "\n" + r"$E[PEP_k]=\lambda_k^s$")
+        colors = [color1 if v >= 0 else color2 for v in self.pep_eigenvalues.values]
+        ax.bar(range(1, self.N + 1), self.pep_eigenvalues.values, color=colors)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set_xlabel("$k$-th eigenvalue")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        ax = plt.subplot2grid((1, 3), (0, 2))
+        ax.set_title(r"Pair Magnitudes $\lambda^{a}_{k}$ of $\Pi_{a}$" + "\n" + r"$E[PAP_k] = 2\lambda_k^a$")
+        ax.bar(range(1, self.N // 2 + 1), self.pap_eigenvalues.values, color=color1)
+        ax.axhline(0, color="black", lw=0.5)
+        ax.set_xlabel("$k$-th paired magnitude")
+        ax.yaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+        ax.xaxis.grid(color="grey", ls="-", lw=0.5, alpha=0.5)
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
+
+    def plot_prediction_matrix(self, which="full", size=5, title=None, save_path=None, cmap="RdBu_r"):
+        """
+        Heatmap of the prediction matrix (or one of its symmetry
+        components). Rows are the return leg and columns are the signal
+        leg, so entry (i, j) measures how the signal of asset j predicts
+        the return of asset i.
+
+        Parameters
+        ----------
+        which: str
+            "full" for `Pi`, "symmetric" for `Pi_s`, "antisymmetric" for
+            `Pi_a`
+
+        size: float
+            Relative size of the chart
+
+        title: str, optional
+            Title for the chart
+
+        save_path: str, Path
+            File path to save the picture. File type extension must be included
+            (.png, .pdf, ...)
+
+        cmap: str
+            Diverging colormap used by the heatmap
+        """
+        options = {
+            "full": (self.Pi, r"$\Pi$"),
+            "symmetric": (self.Pi_s, r"$\Pi_{s}$"),
+            "antisymmetric": (self.Pi_a, r"$\Pi_{a}$"),
+        }
+        if which not in options:
+            raise ValueError(
+                f"which must be 'full', 'symmetric' or 'antisymmetric'; got {which!r}"
+            )
+        mat, default_title = options[which]
+
+        plt.figure(figsize=(size * 1.2, size))
+        vmax = np.abs(mat.values).max()
+        ax = sns.heatmap(
+            mat,
+            cmap=cmap,
+            vmin=-vmax,
+            vmax=vmax,
+            square=True,
+            cbar_kws={"shrink": 0.8},
+        )
+        ax.set_title(title if title is not None else default_title)
+        ax.set_xlabel("Signal")
+        ax.set_ylabel("Return")
+
+        plt.tight_layout()
+        if save_path is not None:
+            plt.savefig(save_path)
+        plt.show()
+        plt.close()
+
+    def get_weights(self, signals, portfolio="L"):
+        """
+        Asset positions implied by the estimated model for any signals,
+        including signals of dates that were not used in the estimation.
+        This is what an out-of-sample backtest needs: fit the class on past
+        data only, then pass the signal of the next date to get the positions
+        to hold over that date.
+
+        The signals go through the same `signal_transform` used in the
+        estimation, and the positions are scaled to `vol_target` (if set)
+        with the estimated `Sigma`, exactly like the `w`, `w_s` and `w_a`
+        attributes. As in the constructor, the class applies no lag: the
+        positions in row t are meant for the return in row t, so the signals
+        must already be lagged by the user.
+
+        Parameters
+        ----------
+        signals: pandas.DataFrame, pandas.Series
+            Raw signals, before `signal_transform`, with the assets as
+            columns. A Series holds the signals of a single date, with the
+            assets as its index. Must cover the same assets as the
+            estimation and must not contain missing values.
+
+        portfolio: str
+            Which positions to return:
+            - "L", "L_s" or "L_a": the optimal linear, symmetric or
+              antisymmetric strategy, S_t' L, S_t' L_s or S_t' L_a. These
+              include the `rank` and `p_norm` regularization.
+            - "PP k", "PEP k" or "PAP k" (e.g. "PP 1"): the k-th individual
+              principal portfolio, principal exposure portfolio or principal
+              alpha portfolio, named like the columns of `pp`, `pep` and
+              `pap`. These are not affected by `rank` and `p_norm`.
+
+        Returns
+        -------
+        pandas.DataFrame, pandas.Series
+            Asset positions, with the dates of `signals` as the index and the
+            assets as columns, or a Series indexed by the assets if `signals`
+            is a Series. The positions of row t times the returns of row t
+            give the strategy's return. For example, for "PP k" on the
+            estimation sample this is the "PP k" column of `pp` (when
+            `vol_target` is None).
+        """
+        is_series = isinstance(signals, pd.Series)
+        if is_series:
+            signals = signals.to_frame().T  # a single row, assets as columns
+
+        # Put the assets in the order used in the estimation, so a different
+        # column order cannot misalign the positions
+        assert set(signals.columns) == set(self.assets) and len(signals.columns) == self.N, \
+            "`signals` must have exactly the same assets as the estimation"
+        signals = signals[self.assets]
+
+        S = self._transform_signals(signals, self.signal_transform)
+        weights = self._weights(S, portfolio)
+        return weights.iloc[0] if is_series else weights
+
+    @staticmethod
+    def _transform_signals(signals, signal_transform):
+        """
+        Applies the cross-sectional signal transformation. "rank" maps signals
+        at each date to equally spaced values in the interval [-0.5, 0.5],
+        which makes the signal vector dollar-neutral and robust to outliers.
+        "zscore" standardizes each cross-section, and "none" leaves the raw
+        signals untouched.
+        """
+        if signal_transform == "rank":
+            ranks = signals.rank(axis=1)
+            n_valid = signals.count(axis=1)
+            return ranks.div(n_valid, axis=0).sub((n_valid + 1) / (2 * n_valid), axis=0)
+
+        elif signal_transform == "zscore":
+            mu = signals.mean(axis=1)
+            sd = signals.std(axis=1)
+            return signals.sub(mu, axis=0).div(sd, axis=0)
+
+        elif signal_transform == "none":
+            return signals.copy()
+
+        else:
+            raise ValueError(
+                f"`signal_transform` must be 'rank', 'zscore' or 'none'. Got {signal_transform!r}"
+            )
+
+    def _observation_weights(self, weighting):
+        """
+        Weights of each observation (summing to one) in the estimation of Pi
+        and of the covariance of returns used by the latent factor. None
+        gives equal weights; a number is the COM of exponential weights that
+        put the most weight on the latest observation.
+        """
+        if weighting is None:  # Equal weights
+            return np.full(self.T, 1 / self.T)
+
+        elif isinstance(weighting, numbers.Real) and not isinstance(weighting, bool):  # Exponential weights
+            # COM = 0 would put all the weight on the last observation
+            assert weighting > 0, "`weighting` must be None or a positive number"
+            alpha = 1 / (1 + weighting)
+            decay = (1 - alpha) ** np.arange(self.T - 1, -1, -1)
+            return decay / decay.sum()
+
+        else:
+            raise ValueError(f"`weighting` must be None or a positive number. Got {weighting!r}")
+
+    def _estimate_predictability_matrix(self, weighting):
+        w = self._observation_weights(weighting)
+        Pi = (self.returns.values * w[:, None]).T @ self.signals.values
+        Pi = pd.DataFrame(Pi, index=self.assets, columns=self.assets)
+        return Pi
+
+    def _estimate_covariance(self, weighting):
+        """
+        Covariance matrix of returns, using the same observation weights as
+        `Pi` (equal weights, or exponential weights when `weighting` is a
+        number). This way the strategy positions and their risk come from
+        the same sample. Returns are demeaned by their weighted mean first.
+
+        Sigma is singular when there are fewer observations than assets
+        (T <= N), so anything that inverts it, like the latent factor,
+        needs T > N.
+        """
+        w = self._observation_weights(weighting)
+        R = self.returns.values
+        R_dm = R - w @ R  # subtract the weighted mean of each asset
+        Sigma = (R_dm * w[:, None]).T @ R_dm
+        Sigma = pd.DataFrame(Sigma, index=self.assets, columns=self.assets)
+        return Sigma
+
+    @staticmethod
+    def _decompositions(Pi):
+
+        # Symmetric decomposition of the predictability matrix
+        Pi_s = (Pi + Pi.T) / 2
+        Pi_a = (Pi - Pi.T) / 2
+
+        # SVD of the predictability matrix
+        U, sv, Vt = svd(Pi)
+        V = Vt.T
+
+        # Eigen decomposition of the symmetric part of Pi
+        lambdas_s, W = eigh(Pi_s)
+        order = np.argsort(lambdas_s)[::-1]
+        lambdas_s = lambdas_s[order]
+        W = W[:, order]
+
+        # Eigen decomposition of the anti-symmetric part of Pi, which
+        # keeps only the positive half of the conjugate purely complex
+        # eigenvalues. Selecting by position instead of by sign
+        # matters when N is odd: the unpaired eigenvalue is zero in theory but
+        # can come out as a tiny positive number due to rounding error.
+        vals, vecs = np.linalg.eigh(1j * Pi_a)  # ascending order
+        n_pairs = Pi_a.shape[0] // 2
+        lambdas_a, Wa = vals[::-1][:n_pairs], vecs[:, ::-1][:, :n_pairs]
+        X = np.sqrt(2) * Wa.real
+        Y = np.sqrt(2) * Wa.imag
+
+        return Pi_s, Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y
+
+    @staticmethod
+    def _dual_exponent(p):
+        """
+        Hölder conjugate q of the Schatten norm exponent p, 1/p + 1/q = 1,
+        including the limiting cases p = 1 (q = inf) and p = inf (q = 1).
+        """
+        if p == 1:
+            return np.inf
+        elif np.isinf(p):
+            return 1.0
+        else:
+            return p / (p - 1)
+
+    def _regularized_weights(self, magnitudes, block_size=1):
+        """
+        Weights of the retained principal portfolios in Proposition 11.
+        """
+        m_max = magnitudes.max()
+        rel = magnitudes / m_max if m_max > 0 else np.ones_like(magnitudes)
+        d = rel ** (self.q_norm - 1)  # note that 0^0 = 1 when q = 1 (p = inf)
+
+        if np.isinf(self.p_norm):
+            norm = d.max()
+        else:
+            norm = (block_size * np.sum(d ** self.p_norm)) ** (1 / self.p_norm)
+
+        return d / norm
+
+    def _optimal_position_matrices(self, V, U, sv, lambdas_s, W, X, Y, lambdas_a):
+        # With the default p = inf and no rank restriction, the solutions
+        # below reduce to the unregularized optimal strategies of
+        # Propositions 3, 6 and 8, since every retained weight equals one.
+        K = self.N if self.rank is None else self.rank
+        K_a = min(K, self.N // 2)  # PAP components come in pairs
+
+        # Optimal linear strategy (Proposition 11 (i)):
+        # L = c sum_{k<=K} sv_k^(q-1) v_k u_k'. Singular values from svd are
+        # already sorted in descending order.
+        d = self._regularized_weights(sv[:K])
+        L = V[:, :K] @ np.diag(d) @ U[:, :K].T
+
+        # Optimal symmetric strategy (Proposition 11 (ii)):
+        # L_s = c sum_{k in K} |lambda_k^s|^(q-1) sign(lambda_k^s) w_k w_k',
+        # where the retained set holds the K largest ABSOLUTE eigenvalues,
+        # which can include negative ones.
+        idx = np.argsort(-np.abs(lambdas_s), kind="stable")[:K]
+        d_s = self._regularized_weights(np.abs(lambdas_s[idx])) * np.sign(lambdas_s[idx])
+        L_s = W[:, idx] @ np.diag(d_s) @ W[:, idx].T
+
+        # Optimal antisymmetric strategy (Proposition 11 (iii)):
+        # L_a = c sum_{k<=K} (lambda_k^a)^(q-1) (x_k y_k' - y_k x_k')
+        # The pair magnitudes are already sorted in descending order.
+        d_a = self._regularized_weights(lambdas_a[:K_a], block_size=2)
+        L_a = (X[:, :K_a] @ np.diag(d_a) @ Y[:, :K_a].T
+               - Y[:, :K_a] @ np.diag(d_a) @ X[:, :K_a].T)
+
+        return L, L_s, L_a
+
+    def _position_matrix(self, portfolio):
+        """
+        N x N position matrix of `portfolio`. "L", "L_s" and "L_a" are the
+        optimal strategies. "PP k", "PEP k" and "PAP k" are the position
+        matrices of the individual portfolios: v_k u_k' for PP k (eq. 15),
+        w_k w_k' for PEP k (eq. 29) and x_k y_k' - y_k x_k' for PAP k.
+        Multiplying one of these by S_t on the left and by R_t on the right
+        gives the returns in `pp`, `pep` and `pap`.
+        """
+        strategies = {"L": self.L, "L_s": self.L_s, "L_a": self.L_a}
+        if portfolio in strategies:
+            return strategies[portfolio]
+
+        # Individual portfolios, named like the columns of pp, pep and pap.
+        # There are N PPs and N PEPs, but only N // 2 PAPs (they come in pairs)
+        kind, _, k = str(portfolio).partition(" ")
+        n_max = {"PP": self.N, "PEP": self.N, "PAP": self.N // 2}
+        if kind not in n_max or not k.isdigit() or not 1 <= int(k) <= n_max[kind]:
+            raise ValueError(
+                f"`portfolio` must be 'L', 'L_s', 'L_a', 'PP k' or 'PEP k' with k in "
+                f"1..{self.N}, or 'PAP k' with k in 1..{self.N // 2}. Got {portfolio!r}"
+            )
+        k = int(k) - 1  # the names are 1-based, the columns of the vectors 0-based
+
+        if kind == "PP":
+            return np.outer(self._V[:, k], self._U[:, k])
+        elif kind == "PEP":
+            return np.outer(self._W[:, k], self._W[:, k])
+        else:  # PAP
+            return np.outer(self._X[:, k], self._Y[:, k]) - np.outer(self._Y[:, k], self._X[:, k])
+
+    def _weights(self, S, portfolio):
+        """
+        Asset positions S_t' L_p for already transformed signals S (dates x
+        assets), where L_p is the position matrix of `portfolio`, scaled to
+        `vol_target` if it is set. This is the single code path behind both
+        `get_weights` and the `w`, `w_s` and `w_a` attributes.
+        """
+        L = pd.DataFrame(self._position_matrix(portfolio), index=self.assets, columns=self.assets)
+        return self._scale_to_vol_target(S @ L)
+
+    def _scale_to_vol_target(self, w):
+        """
+        Rescales each row (date) of the asset positions `w` so that its
+        ex-ante volatility sqrt(w_t' Sigma w_t) equals `self.vol_target`.
+        Returns `w` unchanged when `vol_target` is None.
+
+        The scale factor c_t = vol_target / sqrt(w_t' Sigma w_t) is positive,
+        so it changes only the size of the positions, never their direction.
+        It differs across dates, so the scaled positions are no longer the
+        linear strategy S_t' L. Their in-sample averages therefore no
+        longer map one-to-one onto the spectrum of Pi.
+        """
+        if self.vol_target is None:
+            return w
+
+        # Ex-ante variance of each date's positions, w_t' Sigma w_t, for all
+        # dates at once. Sigma is PSD, so the variance is non-negative in
+        # theory; clip tiny negative values caused by rounding before the
+        # square root.
+        ex_ante_var = np.einsum("ti,ij,tj->t", w.values, self.Sigma.values, w.values)
+        ex_ante_vol = np.sqrt(np.clip(ex_ante_var, 0, None))
+
+        # A date with zero ex-ante volatility (e.g. all signals tied, so the
+        # positions are exactly zero) cannot be scaled up to the target.
+        # Keep its positions at zero instead of dividing by zero. Dates with
+        # NaN positions stay NaN, because NaN > 0 is False and NaN * 0 is NaN.
+        scale = np.divide(
+            self.vol_target,
+            ex_ante_vol,
+            out=np.zeros_like(ex_ante_vol),
+            where=ex_ante_vol > 0,
+        )
+
+        return w.mul(scale, axis=0)
+
+    def _portfolio_returns(self, U, V, W, X, Y, pp_names, pep_names, pap_names):
+        """
+        Timeseries of the returns of every individual principal portfolio and
+        of the simple factor. Signals and returns are taken from the same row
+        (the caller is responsible for lagging the signals), so the return of
+        date t is S_t' L_k R_t for the rank-one position matrix L_k of each
+        component. These are the raw, unregularized building blocks: `rank`
+        and `p_norm` only affect how they are combined in `L`, `L_s` and
+        `L_a`, not the components themselves.
+
+        With equal weights (`weighting=None`), the in-sample averages recover the spectrum
+        of Pi exactly: E[PP_k] = sv_k, E[PEP_k] = lambda_k^s and
+        E[PAP_k] = 2 lambda_k^a.
+
+        Also builds the latent factor F of Lemma 1, eq. (20), the unique
+        tradable factor whose betas are exactly the signals,
+        S_{i,t} = cov(R_i, F) / var(F).
+        """
+        S = self.signals.values
+        R = self.returns.values
+
+        # Principal portfolios, eq. (15): PP_k = (S' v_k) (u_k' R), which
+        # trades the position portfolio u_k on the signal of the timing
+        # portfolio v_k.
+        pp = (S @ V) * (R @ U)
+
+        # Principal exposure portfolios, eq. (29): PEP_k = (S' w_k) (w_k' R),
+        # each eigenvector portfolio of Pi_s traded on its own signal.
+        pep = (S @ W) * (R @ W)
+
+        # Principal alpha portfolios: position matrix x_k y_k' - y_k x_k',
+        # so PAP_k = (S' x_k) (y_k' R) - (S' y_k) (x_k' R). With the pairs
+        # from `_decompositions` (Pi_a x_k = lambda_k y_k and
+        # Pi_a y_k = -lambda_k x_k), this is the same sign convention as
+        # `L_a` and gives E[PAP_k] = +2 lambda_k^a.
+        pap = (S @ X) * (R @ Y) - (S @ Y) * (R @ X)
+
+        # Simple factor, eq. (3): each asset traded on its own signal
+        # (L = Id). By eq. (32) it equals the sum of all the PEPs.
+        simple = (S * R).sum(axis=1)
+
+        # Latent factor, eq. (20): F = [Sigma^-1 S / (S' Sigma^-1 S)]' R.
+        # The paper's Sigma_{R,t} is the conditional covariance of returns,
+        # which is not observed, so it is replaced by `self.Sigma`, estimated
+        # with the same observation weights as Pi (see `_estimate_covariance`).
+        # The factor weights do not change when Sigma is rescaled, so the
+        # 1/T vs 1/(T-1) normalization does not matter here. Sigma must be
+        # invertible, which requires more observations than assets.
+        Sigma_inv_S = np.linalg.solve(self.Sigma.values, S.T).T  # row t holds Sigma^-1 S_t
+        factor_weights = Sigma_inv_S / (S * Sigma_inv_S).sum(axis=1)[:, None]
+        factor = (factor_weights * R).sum(axis=1)
+
+        index = self.returns.index
+        pp = pd.DataFrame(pp, index=index, columns=pp_names)
+        pep = pd.DataFrame(pep, index=index, columns=pep_names)
+        pap = pd.DataFrame(pap, index=index, columns=pap_names)
+        simple = pd.Series(simple, index=index, name="Simple Factor")
+        factor = pd.Series(factor, index=index, name="Latent Factor")
+
+        return pp, pep, pap, simple, factor

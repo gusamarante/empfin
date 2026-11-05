@@ -13,6 +13,7 @@ from empfin.data_readers import (
 from empfin.bfm import BFM, BFMGLS, BFMOMIT
 from empfin.classics import CrossSectionReg, FamaMacBeth, NonTradableFactors, TimeseriesReg
 from empfin.msb import ConditionalRiskPremiaTermStructure, RiskPremiaTermStructure
+from empfin.prinport import PrincipalPortfolios
 
 __all__ = [
     "BFM",
@@ -22,6 +23,7 @@ __all__ = [
     "CrossSectionReg",
     "FamaMacBeth",
     "NonTradableFactors",
+    "PrincipalPortfolios",
     "RiskPremiaTermStructure",
     "TimeseriesReg",
     "bond_futures",
