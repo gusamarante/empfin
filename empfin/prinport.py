@@ -18,9 +18,10 @@ class PrincipalPortfolios:
             returns,
             signals,
             signal_transform="rank",
-            pi_weight=None,
+            weighting=None,
             rank=None,
             p_norm=np.inf,
+            vol_target=None,
     ):
         """
         Full-sample (in-sample) estimation of the principal portfolios. The
@@ -46,7 +47,7 @@ class PrincipalPortfolios:
             dollar-neutral and insensitive to outliers. "zscore"
             standardizes each cross-section. "none" uses the raw signals.
 
-        pi_weight: None, int, float
+        weighting: None, int, float
             Weighting scheme for the observations of the estimation of the
             predictability matrix Pi. If None, uses equal weights for every
             observation. If any number is passed, the number is used as the
@@ -94,9 +95,8 @@ class PrincipalPortfolios:
         assets: pandas.Index
             Names of the assets, the columns of `returns` and `signals`
 
-        pi_weight: None, int, float
-            Observation weighting scheme used to estimate `Pi` and the return
-            covariance behind `latent_factor`
+        weighting: None, int, float
+            Observation weighting scheme used to estimate `Pi` and `Sigma`
 
         rank: None, int
             The rank restriction K of Proposition 11
@@ -117,6 +117,12 @@ class PrincipalPortfolios:
 
         Pi_a: pandas.DataFrame
             Antisymmetric part of the prediction matrix, (Pi - Pi') / 2
+
+        Sigma: pandas.DataFrame
+            Covariance matrix of returns, N x N, estimated with the same
+            observation weights as `Pi` (see `pi_weight`). Returns are
+            demeaned by their weighted mean, and the weights sum to one, so
+            with equal weights this is the 1/T sample covariance
 
         singular_values: pandas.Series
             Singular values of `Pi` in decreasing order, indexed "PP 1" to
@@ -181,8 +187,7 @@ class PrincipalPortfolios:
         latent_factor: pandas.Series
             Timeseries of the returns of the latent factor F of Lemma 1,
             the unique tradable factor whose betas are the signals. Its
-            weights Sigma^-1 S_t / (S_t' Sigma^-1 S_t) use the return
-            covariance Sigma estimated with the `pi_weight` scheme
+            weights Sigma^-1 S_t / (S_t' Sigma^-1 S_t) use `Sigma`
         """
 
         assert returns.index.equals(signals.index), \
@@ -201,14 +206,19 @@ class PrincipalPortfolios:
         if rank is not None:
             assert isinstance(rank, (int, np.integer)) and 1 <= rank <= self.N, \
                 f"`rank` must be None or an integer between 1 and N={self.N}"
+
         assert p_norm >= 1, "`p_norm` must be in the interval [1, inf]"
+
         self.rank = rank
         self.p_norm = p_norm
         self.q_norm = self._dual_exponent(p_norm)
 
-        self.pi_weight = pi_weight
-        self.Pi = self._estimate_predictability_matrix(pi_weight)
+        self.pi_weight = weighting
+        self.Pi = self._estimate_predictability_matrix(weighting)
         self.Pi_s, self.Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y = self._decompositions(self.Pi)
+
+        # Covariance of returns, using the same observation weights as Pi
+        self.Sigma = self._estimate_covariance(weighting)
 
         pp_names = [f"PP {k + 1}" for k in range(self.N)]
         pep_names = [f"PEP {k + 1}" for k in range(self.N)]
@@ -393,6 +403,24 @@ class PrincipalPortfolios:
         Pi = pd.DataFrame(Pi, index=self.assets, columns=self.assets)
         return Pi
 
+    def _estimate_covariance(self, pi_weight):
+        """
+        Covariance matrix of returns, using the same observation weights as
+        `Pi` (equal weights, or exponential weights when `pi_weight` is a
+        number). This way the strategy positions and their risk come from
+        the same sample. Returns are demeaned by their weighted mean first.
+
+        Sigma is singular when there are fewer observations than assets
+        (T <= N), so anything that inverts it, like the latent factor,
+        needs T > N.
+        """
+        w = self._observation_weights(pi_weight)
+        R = self.returns.values
+        R_dm = R - w @ R  # subtract the weighted mean of each asset
+        Sigma = (R_dm * w[:, None]).T @ R_dm
+        Sigma = pd.DataFrame(Sigma, index=self.assets, columns=self.assets)
+        return Sigma
+
     @staticmethod
     def _decompositions(Pi):
 
@@ -529,16 +557,12 @@ class PrincipalPortfolios:
 
         # Latent factor, eq. (20): F = [Sigma^-1 S / (S' Sigma^-1 S)]' R.
         # The paper's Sigma_{R,t} is the conditional covariance of returns,
-        # which is not observed. It is estimated here with the same
-        # observation weights as Pi (sample covariance for equal weights,
-        # exponentially weighted otherwise), so both inputs of the strategies
-        # share one estimation scheme. The weights are invariant to the scale
-        # of Sigma, so the 1/T vs 1/(T-1) normalization is irrelevant. Sigma
-        # must be invertible, which requires more observations than assets.
-        obs_w = self._observation_weights(self.pi_weight)
-        R_dm = R - obs_w @ R
-        Sigma = (R_dm * obs_w[:, None]).T @ R_dm
-        Sigma_inv_S = np.linalg.solve(Sigma, S.T).T  # row t holds Sigma^-1 S_t
+        # which is not observed, so it is replaced by `self.Sigma`, estimated
+        # with the same observation weights as Pi (see `_estimate_covariance`).
+        # The factor weights do not change when Sigma is rescaled, so the
+        # 1/T vs 1/(T-1) normalization does not matter here. Sigma must be
+        # invertible, which requires more observations than assets.
+        Sigma_inv_S = np.linalg.solve(self.Sigma.values, S.T).T  # row t holds Sigma^-1 S_t
         factor_weights = Sigma_inv_S / (S * Sigma_inv_S).sum(axis=1)[:, None]
         factor = (factor_weights * R).sum(axis=1)
 
