@@ -28,17 +28,30 @@ class PrincipalPortfolios:
         framework uses the signals of all assets to predict the return of each
         individual asset, including cross-predictability.
 
+        The class does NOT lag the signals. Row t of `signals` is paired with
+        row t of `returns`, so the user must lag the signals before passing
+        them (see `signals`). Passing unlagged signals gives look-ahead
+        results, and the class has no way to detect it.
+
         Parameters
         ----------
         returns: pandas.DataFrame
             Timeseries of asset (excess) returns
 
         signals: pandas.DataFrame
-            Timeseries of the predictive signals. Must have the same columns
-            as `returns`. The signal in the row of date t is assumed to be
-            known at date t and is paired with the return of date t + 1, so
-            both panels should be indexed by the date at which they are
-            observed. Dates with any missing value are dropped.
+            Timeseries of the predictive signals. Must have the same index
+            and columns as `returns`. The signal in row t is paired with the
+            return in row t of `returns`, without any lag. The user is
+            responsible for the timing: row t must contain only information
+            available before the return of row t is realized. For example,
+            for a 12-month momentum signal on monthly returns, use
+            `returns.rolling(12).sum().shift(1)`, so that row t holds the
+            returns from t-12 to t-1.
+
+            Neither `returns` nor `signals` may contain missing values. The
+            user must drop the dates with missing values (such as the first
+            rows created by `.shift`) and align both indexes before passing
+            them.
 
         signal_transform: str
             Cross-sectional transformation applied to the signals at each
@@ -74,6 +87,25 @@ class PrincipalPortfolios:
             (L proportional to Pi' with no rank restriction), and p = 1 puts
             all the weight on the leading portfolio.
 
+        vol_target: None, float
+            Target volatility of the asset positions `w`, `w_s` and `w_a`, in
+            the same periodicity as `returns` (e.g. pass 0.10 / sqrt(12) for
+            10% a year with monthly returns). If None (default), the positions
+            are left unscaled. Otherwise, the positions of each date are
+            rescaled so that their ex-ante volatility, sqrt(w_t' Sigma w_t),
+            equals `vol_target`. This uses the full-sample `Sigma`, so the
+            scaling is in-sample like the rest of the estimation.
+
+            When `vol_target` is passed, the positions are no longer tied to
+            the position matrices `L`, `L_s` and `L_a`. The scale factor
+            changes from date to date, so `w` is no longer equal to S_t' L
+            (and likewise for `w_s` and `w_a`), and no single matrix
+            reproduces the scaled positions. `L`, `L_s` and `L_a` themselves
+            are not changed: they still describe the unscaled strategies of
+            Propositions 3, 6, 8 and 11. As a consequence, the in-sample
+            average returns of the scaled strategies no longer match the
+            singular values and eigenvalues of `Pi`.
+
         Attributes
         ----------
         returns: pandas.DataFrame
@@ -81,7 +113,8 @@ class PrincipalPortfolios:
 
         signals: pandas.DataFrame
             Timeseries of the signals after `signal_transform` is applied.
-            Row t is paired with the return in row t of `returns`
+            Row t is paired with the return in row t of `returns`, without
+            any lag applied by the class.
 
         signal_transform: str
             The cross-sectional signal transformation used
@@ -106,6 +139,10 @@ class PrincipalPortfolios:
 
         q_norm: float
             Hölder conjugate of `p_norm`, 1/p + 1/q = 1
+
+        vol_target: None, float
+            Target ex-ante volatility of the asset positions, None if the
+            positions are not scaled
 
         Pi: pandas.DataFrame
             Estimated prediction matrix Pi = E[R S'], N x N. Rows are the
@@ -152,19 +189,25 @@ class PrincipalPortfolios:
         L_a: numpy.ndarray
             N x N position matrix of the optimal antisymmetric strategy
             (Proposition 8, regularized as in Proposition 11), built from
-            the PAPs
+            the PAPs. `L`, `L_s` and `L_a` are never affected by
+            `vol_target`, because the volatility scaling changes from date
+            to date and cannot be folded into a constant matrix
 
         w: pandas.DataFrame
             Timeseries of asset positions S_t' L of the optimal linear
-            strategy. Row t is applied to the returns in row t of `returns`
+            strategy. Row t is applied to the returns in row t of `returns`.
+            If `vol_target` is set, row t is c_t S_t' L, where the positive
+            scalar c_t makes the row's ex-ante volatility equal `vol_target`.
+            Dates where the unscaled positions have zero volatility (e.g.
+            all signals tied) keep zero positions
 
         w_s: pandas.DataFrame
             Timeseries of asset positions S_t' L_s of the optimal symmetric
-            strategy
+            strategy, scaled like `w` when `vol_target` is set
 
         w_a: pandas.DataFrame
             Timeseries of asset positions S_t' L_a of the optimal
-            antisymmetric strategy
+            antisymmetric strategy, scaled like `w` when `vol_target` is set
 
         pp: pandas.DataFrame
             Timeseries of the returns of each principal portfolio,
@@ -209,11 +252,16 @@ class PrincipalPortfolios:
 
         assert p_norm >= 1, "`p_norm` must be in the interval [1, inf]"
 
+        if vol_target is not None:
+            assert isinstance(vol_target, (int, float, np.number)) and not isinstance(vol_target, bool) \
+                and vol_target > 0, "`vol_target` must be None or a positive number"
+
         self.rank = rank
         self.p_norm = p_norm
         self.q_norm = self._dual_exponent(p_norm)
+        self.vol_target = vol_target
 
-        self.pi_weight = weighting
+        self.weighting = weighting
         self.Pi = self._estimate_predictability_matrix(weighting)
         self.Pi_s, self.Pi_a, U, sv, V, lambdas_s, W, lambdas_a, X, Y = self._decompositions(self.Pi)
 
@@ -231,6 +279,11 @@ class PrincipalPortfolios:
 
         # Portfolio weights
         self.L, self.L_s, self.L_a, self.w, self.w_s, self.w_a = self._portfolio_weights(V, U, sv, lambdas_s, W, X, Y, lambdas_a)
+
+        # Volatility targeting of the asset positions (no-op if vol_target is None)
+        self.w = self._scale_to_vol_target(self.w)
+        self.w_s = self._scale_to_vol_target(self.w_s)
+        self.w_a = self._scale_to_vol_target(self.w_a)
 
         # Stream of Portfolio Returns
         self.pp, self.pep, self.pap, self.simple_factor, self.latent_factor = self._portfolio_returns(U, V, W, X, Y, pp_names, pep_names, pap_names)
@@ -514,6 +567,41 @@ class PrincipalPortfolios:
 
         return L, L_s, L_a, w, w_s, w_a
 
+    def _scale_to_vol_target(self, w):
+        """
+        Rescales each row (date) of the asset positions `w` so that its
+        ex-ante volatility sqrt(w_t' Sigma w_t) equals `self.vol_target`.
+        Returns `w` unchanged when `vol_target` is None.
+
+        The scale factor c_t = vol_target / sqrt(w_t' Sigma w_t) is positive,
+        so it changes only the size of the positions, never their direction.
+        It differs across dates, so the scaled positions are no longer the
+        linear strategy S_t' L. Their in-sample averages therefore no
+        longer map one-to-one onto the spectrum of Pi.
+        """
+        if self.vol_target is None:
+            return w
+
+        # Ex-ante variance of each date's positions, w_t' Sigma w_t, for all
+        # dates at once. Sigma is PSD, so the variance is non-negative in
+        # theory; clip tiny negative values caused by rounding before the
+        # square root.
+        ex_ante_var = np.einsum("ti,ij,tj->t", w.values, self.Sigma.values, w.values)
+        ex_ante_vol = np.sqrt(np.clip(ex_ante_var, 0, None))
+
+        # A date with zero ex-ante volatility (e.g. all signals tied, so the
+        # positions are exactly zero) cannot be scaled up to the target.
+        # Keep its positions at zero instead of dividing by zero. Dates with
+        # NaN positions stay NaN, because NaN > 0 is False and NaN * 0 is NaN.
+        scale = np.divide(
+            self.vol_target,
+            ex_ante_vol,
+            out=np.zeros_like(ex_ante_vol),
+            where=ex_ante_vol > 0,
+        )
+
+        return w.mul(scale, axis=0)
+
     def _portfolio_returns(self, U, V, W, X, Y, pp_names, pep_names, pap_names):
         """
         Timeseries of the returns of every individual principal portfolio and
@@ -574,3 +662,28 @@ class PrincipalPortfolios:
         factor = pd.Series(factor, index=index, name="Latent Factor")
 
         return pp, pep, pap, simple, factor
+
+
+
+if __name__ == "__main__":
+    from empfin import ff25p
+
+    # Get returns
+    rets = ff25p()
+    rets = rets[rets.index <= "2019-12-31"].dropna()
+
+    # Get signals
+    sigs = rets.rolling(12).sum().shift(1).dropna()
+
+    # Align index
+    new_idx = rets.index.intersection(sigs.index)
+    rets = rets.reindex(new_idx)
+    sigs = sigs.reindex(new_idx)
+
+    pp = PrincipalPortfolios(
+        returns=rets,
+        signals=sigs,
+        signal_transform="rank",
+        weighting=None,
+        vol_target=0.1 / np.sqrt(12),
+    )

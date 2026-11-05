@@ -39,6 +39,11 @@ def ff5f():
 
     factors.index = pd.to_datetime(factors.index, format="%Y%m")
     factors = factors.resample("ME").last()
+
+    # The source file is in percentage points (5.08 = 5.08%). Convert to
+    # decimals so the factors are on the same scale as `ff25p`.
+    factors = factors / 100
+
     rf = factors.pop("RF")
     return factors, rf
 
@@ -72,6 +77,11 @@ def ff25p(sub_rf=True):
     )
     ports.index = pd.to_datetime(ports.index, format="%Y%m")
     ports = ports.resample("ME").last()
+
+    # The source file is in percentage points (5.83 = 5.83%). Convert to
+    # decimals BEFORE subtracting the risk-free rate, because `ff5f` already
+    # returns `rf` in decimals.
+    ports = ports / 100
 
     if sub_rf:
         _, rf = ff5f()
