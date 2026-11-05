@@ -88,7 +88,8 @@ class PrincipalPortfolios:
             all the weight on the leading portfolio.
 
         vol_target: None, float
-            Target volatility of the asset positions `w`, `w_s` and `w_a`, in
+            Target volatility of the asset positions `w`, `w_s` and `w_a`,
+            and of the positions returned by `get_weights`, in
             the same periodicity as `returns` (e.g. pass 0.10 / sqrt(12) for
             10% a year with monthly returns). If None (default), the positions
             are left unscaled. Otherwise, the positions of each date are
@@ -199,7 +200,8 @@ class PrincipalPortfolios:
             If `vol_target` is set, row t is c_t S_t' L, where the positive
             scalar c_t makes the row's ex-ante volatility equal `vol_target`.
             Dates where the unscaled positions have zero volatility (e.g.
-            all signals tied) keep zero positions
+            all signals tied) keep zero positions. `get_weights` computes
+            the same positions for new signals, such as out-of-sample dates
 
         w_s: pandas.DataFrame
             Timeseries of asset positions S_t' L_s of the optimal symmetric
@@ -277,13 +279,19 @@ class PrincipalPortfolios:
         self.pep_eigenvalues = pd.Series(lambdas_s, index=pep_names, name="PEP Eigenvalues")
         self.pap_eigenvalues = pd.Series(lambdas_a, index=pap_names, name="PAP Eigenvalues")
 
-        # Portfolio weights
-        self.L, self.L_s, self.L_a, self.w, self.w_s, self.w_a = self._portfolio_weights(V, U, sv, lambdas_s, W, X, Y, lambdas_a)
+        # Singular vectors of Pi and eigenvectors of Pi_s and Pi_a, kept to
+        # build the positions of the individual portfolios in `get_weights`
+        self._U, self._V, self._W, self._X, self._Y = U, V, W, X, Y
 
-        # Volatility targeting of the asset positions (no-op if vol_target is None)
-        self.w = self._scale_to_vol_target(self.w)
-        self.w_s = self._scale_to_vol_target(self.w_s)
-        self.w_a = self._scale_to_vol_target(self.w_a)
+        # Position matrices of the optimal strategies
+        self.L, self.L_s, self.L_a = self._optimal_position_matrices(V, U, sv, lambdas_s, W, X, Y, lambdas_a)
+
+        # Asset positions S_t' L of the optimal strategies on the estimation
+        # sample. They go through the same code as `get_weights`, including
+        # the volatility targeting (a no-op if vol_target is None)
+        self.w = self._weights(self.signals, "L")
+        self.w_s = self._weights(self.signals, "L_s")
+        self.w_a = self._weights(self.signals, "L_a")
 
         # Stream of Portfolio Returns
         self.pp, self.pep, self.pap, self.simple_factor, self.latent_factor = self._portfolio_returns(U, V, W, X, Y, pp_names, pep_names, pap_names)
@@ -403,6 +411,63 @@ class PrincipalPortfolios:
             plt.savefig(save_path)
         plt.show()
         plt.close()
+
+    def get_weights(self, signals, portfolio="L"):
+        """
+        Asset positions implied by the estimated model for any signals,
+        including signals of dates that were not used in the estimation.
+        This is what an out-of-sample backtest needs: fit the class on past
+        data only, then pass the signal of the next date to get the positions
+        to hold over that date.
+
+        The signals go through the same `signal_transform` used in the
+        estimation, and the positions are scaled to `vol_target` (if set)
+        with the estimated `Sigma`, exactly like the `w`, `w_s` and `w_a`
+        attributes. As in the constructor, the class applies no lag: the
+        positions in row t are meant for the return in row t, so the signals
+        must already be lagged by the user.
+
+        Parameters
+        ----------
+        signals: pandas.DataFrame, pandas.Series
+            Raw signals, before `signal_transform`, with the assets as
+            columns. A Series holds the signals of a single date, with the
+            assets as its index. Must cover the same assets as the
+            estimation and must not contain missing values.
+
+        portfolio: str
+            Which positions to return:
+            - "L", "L_s" or "L_a": the optimal linear, symmetric or
+              antisymmetric strategy, S_t' L, S_t' L_s or S_t' L_a. These
+              include the `rank` and `p_norm` regularization.
+            - "PP k", "PEP k" or "PAP k" (e.g. "PP 1"): the k-th individual
+              principal portfolio, principal exposure portfolio or principal
+              alpha portfolio, named like the columns of `pp`, `pep` and
+              `pap`. These are not affected by `rank` and `p_norm`.
+
+        Returns
+        -------
+        pandas.DataFrame, pandas.Series
+            Asset positions, with the dates of `signals` as the index and the
+            assets as columns, or a Series indexed by the assets if `signals`
+            is a Series. The positions of row t times the returns of row t
+            give the strategy's return. For example, for "PP k" on the
+            estimation sample this is the "PP k" column of `pp` (when
+            `vol_target` is None).
+        """
+        is_series = isinstance(signals, pd.Series)
+        if is_series:
+            signals = signals.to_frame().T  # a single row, assets as columns
+
+        # Put the assets in the order used in the estimation, so a different
+        # column order cannot misalign the positions
+        assert set(signals.columns) == set(self.assets) and len(signals.columns) == self.N, \
+            "`signals` must have exactly the same assets as the estimation"
+        signals = signals[self.assets]
+
+        S = self._transform_signals(signals, self.signal_transform)
+        weights = self._weights(S, portfolio)
+        return weights.iloc[0] if is_series else weights
 
     @staticmethod
     def _transform_signals(signals, signal_transform):
@@ -532,7 +597,7 @@ class PrincipalPortfolios:
 
         return d / norm
 
-    def _portfolio_weights(self, V, U, sv, lambdas_s, W, X, Y, lambdas_a):
+    def _optimal_position_matrices(self, V, U, sv, lambdas_s, W, X, Y, lambdas_a):
         # With the default p = inf and no rank restriction, the solutions
         # below reduce to the unregularized optimal strategies of
         # Propositions 3, 6 and 8, since every retained weight equals one.
@@ -560,12 +625,48 @@ class PrincipalPortfolios:
         L_a = (X[:, :K_a] @ np.diag(d_a) @ Y[:, :K_a].T
                - Y[:, :K_a] @ np.diag(d_a) @ X[:, :K_a].T)
 
-        # Weights
-        w = self.signals @ pd.DataFrame(L, index=self.assets, columns=self.assets)
-        w_s = self.signals @ pd.DataFrame(L_s, index=self.assets, columns=self.assets)
-        w_a = self.signals @ pd.DataFrame(L_a, index=self.assets, columns=self.assets)
+        return L, L_s, L_a
 
-        return L, L_s, L_a, w, w_s, w_a
+    def _position_matrix(self, portfolio):
+        """
+        N x N position matrix of `portfolio`. "L", "L_s" and "L_a" are the
+        optimal strategies. "PP k", "PEP k" and "PAP k" are the position
+        matrices of the individual portfolios: v_k u_k' for PP k (eq. 15),
+        w_k w_k' for PEP k (eq. 29) and x_k y_k' - y_k x_k' for PAP k.
+        Multiplying one of these by S_t on the left and by R_t on the right
+        gives the returns in `pp`, `pep` and `pap`.
+        """
+        strategies = {"L": self.L, "L_s": self.L_s, "L_a": self.L_a}
+        if portfolio in strategies:
+            return strategies[portfolio]
+
+        # Individual portfolios, named like the columns of pp, pep and pap.
+        # There are N PPs and N PEPs, but only N // 2 PAPs (they come in pairs)
+        kind, _, k = str(portfolio).partition(" ")
+        n_max = {"PP": self.N, "PEP": self.N, "PAP": self.N // 2}
+        if kind not in n_max or not k.isdigit() or not 1 <= int(k) <= n_max[kind]:
+            raise ValueError(
+                f"`portfolio` must be 'L', 'L_s', 'L_a', 'PP k' or 'PEP k' with k in "
+                f"1..{self.N}, or 'PAP k' with k in 1..{self.N // 2}. Got {portfolio!r}"
+            )
+        k = int(k) - 1  # the names are 1-based, the columns of the vectors 0-based
+
+        if kind == "PP":
+            return np.outer(self._V[:, k], self._U[:, k])
+        elif kind == "PEP":
+            return np.outer(self._W[:, k], self._W[:, k])
+        else:  # PAP
+            return np.outer(self._X[:, k], self._Y[:, k]) - np.outer(self._Y[:, k], self._X[:, k])
+
+    def _weights(self, S, portfolio):
+        """
+        Asset positions S_t' L_p for already transformed signals S (dates x
+        assets), where L_p is the position matrix of `portfolio`, scaled to
+        `vol_target` if it is set. This is the single code path behind both
+        `get_weights` and the `w`, `w_s` and `w_a` attributes.
+        """
+        L = pd.DataFrame(self._position_matrix(portfolio), index=self.assets, columns=self.assets)
+        return self._scale_to_vol_target(S @ L)
 
     def _scale_to_vol_target(self, w):
         """
@@ -662,28 +763,3 @@ class PrincipalPortfolios:
         factor = pd.Series(factor, index=index, name="Latent Factor")
 
         return pp, pep, pap, simple, factor
-
-
-
-if __name__ == "__main__":
-    from empfin import ff25p
-
-    # Get returns
-    rets = ff25p()
-    rets = rets[rets.index <= "2019-12-31"].dropna()
-
-    # Get signals
-    sigs = rets.rolling(12).sum().shift(1).dropna()
-
-    # Align index
-    new_idx = rets.index.intersection(sigs.index)
-    rets = rets.reindex(new_idx)
-    sigs = sigs.reindex(new_idx)
-
-    pp = PrincipalPortfolios(
-        returns=rets,
-        signals=sigs,
-        signal_transform="rank",
-        weighting=None,
-        vol_target=0.1 / np.sqrt(12),
-    )
