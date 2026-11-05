@@ -1,3 +1,5 @@
+import numbers
+
 import numpy as np
 import pandas as pd
 from numpy.linalg import eigh, svd
@@ -63,7 +65,7 @@ class PrincipalPortfolios:
         weighting: None, int, float
             Weighting scheme for the observations of the estimation of the
             predictability matrix Pi. If None, uses equal weights for every
-            observation. If any number is passed, the number is used as the
+            observation. If a positive number is passed, it is used as the
             COM parameter of an exponentially weighting scheme.
 
         rank: None, int
@@ -158,7 +160,7 @@ class PrincipalPortfolios:
 
         Sigma: pandas.DataFrame
             Covariance matrix of returns, N x N, estimated with the same
-            observation weights as `Pi` (see `pi_weight`). Returns are
+            observation weights as `Pi` (see `weighting`). Returns are
             demeaned by their weighted mean, and the weights sum to one, so
             with equal weights this is the 1/T sample covariance
 
@@ -236,10 +238,10 @@ class PrincipalPortfolios:
         """
 
         assert returns.index.equals(signals.index), \
-            "Indexes of `assets` and `factors` must be the same"
+            "Indexes of `returns` and `signals` must be the same"
 
         assert returns.columns.equals(signals.columns), \
-            "Columns of `assets` and `factors` must be the same"
+            "Columns of `returns` and `signals` must be the same"
 
         self.signals = self._transform_signals(signals, signal_transform)
         self.signal_transform = signal_transform
@@ -365,8 +367,8 @@ class PrincipalPortfolios:
         Parameters
         ----------
         which: str
-            "full" for Pi, "symmetric" for Pi_sym, "antisymmetric" for
-            Pi_asym
+            "full" for `Pi`, "symmetric" for `Pi_s`, "antisymmetric" for
+            `Pi_a`
 
         size: float
             Relative size of the chart
@@ -496,35 +498,36 @@ class PrincipalPortfolios:
                 f"`signal_transform` must be 'rank', 'zscore' or 'none'. Got {signal_transform!r}"
             )
 
-    def _observation_weights(self, pi_weight):
+    def _observation_weights(self, weighting):
         """
         Weights of each observation (summing to one) in the estimation of Pi
         and of the covariance of returns used by the latent factor. None
         gives equal weights; a number is the COM of exponential weights that
         put the most weight on the latest observation.
         """
-        if pi_weight is None:  # Equal weights
+        if weighting is None:  # Equal weights
             return np.full(self.T, 1 / self.T)
 
-        elif isinstance(pi_weight, (float, int)):  # Exponential weights
-            assert pi_weight > 0, "`pi_weight` must be non-negative"
-            alpha = 1 / (1 + pi_weight)
+        elif isinstance(weighting, numbers.Real) and not isinstance(weighting, bool):  # Exponential weights
+            # COM = 0 would put all the weight on the last observation
+            assert weighting > 0, "`weighting` must be None or a positive number"
+            alpha = 1 / (1 + weighting)
             decay = (1 - alpha) ** np.arange(self.T - 1, -1, -1)
             return decay / decay.sum()
 
         else:
-            raise ValueError(f"`pi_weight` needs to be either None or numeric")
+            raise ValueError(f"`weighting` must be None or a positive number. Got {weighting!r}")
 
-    def _estimate_predictability_matrix(self, pi_weight):
-        w = self._observation_weights(pi_weight)
+    def _estimate_predictability_matrix(self, weighting):
+        w = self._observation_weights(weighting)
         Pi = (self.returns.values * w[:, None]).T @ self.signals.values
         Pi = pd.DataFrame(Pi, index=self.assets, columns=self.assets)
         return Pi
 
-    def _estimate_covariance(self, pi_weight):
+    def _estimate_covariance(self, weighting):
         """
         Covariance matrix of returns, using the same observation weights as
-        `Pi` (equal weights, or exponential weights when `pi_weight` is a
+        `Pi` (equal weights, or exponential weights when `weighting` is a
         number). This way the strategy positions and their risk come from
         the same sample. Returns are demeaned by their weighted mean first.
 
@@ -532,7 +535,7 @@ class PrincipalPortfolios:
         (T <= N), so anything that inverts it, like the latent factor,
         needs T > N.
         """
-        w = self._observation_weights(pi_weight)
+        w = self._observation_weights(weighting)
         R = self.returns.values
         R_dm = R - w @ R  # subtract the weighted mean of each asset
         Sigma = (R_dm * w[:, None]).T @ R_dm
@@ -584,7 +587,7 @@ class PrincipalPortfolios:
 
     def _regularized_weights(self, magnitudes, block_size=1):
         """
-        Weights of the retained principal port folios in Proposition 11,
+        Weights of the retained principal portfolios in Proposition 11.
         """
         m_max = magnitudes.max()
         rel = magnitudes / m_max if m_max > 0 else np.ones_like(magnitudes)
@@ -713,7 +716,7 @@ class PrincipalPortfolios:
         and `p_norm` only affect how they are combined in `L`, `L_s` and
         `L_a`, not the components themselves.
 
-        With equal `pi_weight`, the in-sample averages recover the spectrum
+        With equal weights (`weighting=None`), the in-sample averages recover the spectrum
         of Pi exactly: E[PP_k] = sv_k, E[PEP_k] = lambda_k^s and
         E[PAP_k] = 2 lambda_k^a.
 

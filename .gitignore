@@ -7,3 +7,7 @@ dist/
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
+
+# OS and IDE files
+.DS_Store
+.idea/

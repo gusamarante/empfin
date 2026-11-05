@@ -24,6 +24,7 @@ setup(
     install_requires=[
         "matplotlib",
         "numpy",
+        "openpyxl",
         "pandas",
         "scikit_learn",
         "scipy",

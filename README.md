@@ -11,7 +11,7 @@ Currently available models for estimation of risk premia:
   - `BFM`: Bayesian Fama-MacBeth (BFM-OLS), which replaces the two-pass point estimates with a posterior distribution over the risk premia
   - `BFMGLS`: GLS variant of the Bayesian Fama-MacBeth, which uses the idiosyncratic-error precision matrix in the cross-sectional step
   - `BFMOMIT`: variant of the Bayesian Fama-MacBeth that is robust to omitted factors by projecting onto the principal components of the asset-return covariance
-- `PrincipalPortfolios`: Principal Portfolios from [Kelly, Malamud & Pedersen (2023)](https://doi.org/10.1111/jofi.13199), which use all assets' signals to predict each asset's return through the prediction matrix, and decompose the optimal strategy into exposure (PEP) and alpha (PAP) components:
+- `PrincipalPortfolios`: Principal Portfolios from [Kelly, Malamud & Pedersen (2023)](https://doi.org/10.1111/jofi.13199), which use all assets' signals to predict each asset's return through the prediction matrix, and decompose the optimal strategy into exposure (PEP) and alpha (PAP) components.
 - `RiskPremiaTermStructure`: term structure of risk premia with a single factor, tradable or not, following [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696). I would like to thank the authors for sharing their replication files.
 - `ConditionalRiskPremiaTermStructure`: conditional, VAR-augmented version of the term-structure estimator, from [Bryzgalova, Huang & Julliard (2024)](https://doi.org/10.2139/ssrn.4752696).
 
